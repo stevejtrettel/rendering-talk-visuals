@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rendering Talk — Visuals</title>
+    <style>
+      :root {
+        --bg: #000;
+        --bone: #d9d1c2;
+        --ash: #9a9287;
+        --slate: #7c8b96;
+        --slate-deep: #3d4750;
+        --ochre: #d4a63f;
+        --card: #101315;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--bone);
+        font: 15px/1.6 ui-sans-serif, -apple-system, "Helvetica Neue", sans-serif;
+        padding: 56px 40px 80px;
+      }
+      header { max-width: 1100px; margin: 0 auto 40px; }
+      h1 {
+        font-size: 26px; font-weight: 600; margin: 0 0 6px;
+        letter-spacing: -0.01em;
+      }
+      header p { margin: 0; color: var(--ash); font-size: 14px; }
+      main { max-width: 1100px; margin: 0 auto; }
+      h2 {
+        font-size: 12px; text-transform: uppercase; letter-spacing: 0.12em;
+        color: var(--slate); font-weight: 600;
+        margin: 40px 0 14px; padding-bottom: 8px;
+        border-bottom: 1px solid var(--slate-deep);
+      }
+      .grid {
+        display: grid; gap: 12px;
+        grid-template-columns: repeat(auto-fill, minmax(255px, 1fr));
+      }
+      a.card {
+        display: block; padding: 16px 18px;
+        background: var(--card); border: 1px solid var(--slate-deep);
+        border-radius: 8px; text-decoration: none; color: inherit;
+        transition: border-color 120ms, transform 120ms, background 120ms;
+      }
+      a.card:hover {
+        border-color: var(--ochre); background: #161a1d;
+        transform: translateY(-2px);
+      }
+      .card .name { font-weight: 600; font-size: 15px; margin-bottom: 3px; }
+      .card .slug {
+        font: 11px ui-monospace, Menlo, monospace; color: var(--slate-deep);
+        margin-bottom: 7px;
+      }
+      .card .blurb { font-size: 13px; color: var(--ash); line-height: 1.5; }
+      .empty { color: var(--ash); font-size: 14px; }
+      code {
+        font: 12px ui-monospace, Menlo, monospace;
+        background: #101315; padding: 2px 6px; border-radius: 4px;
+        color: var(--ochre);
+      }
+      footer {
+        max-width: 1100px; margin: 56px auto 0; padding-top: 20px;
+        border-top: 1px solid var(--slate-deep);
+        color: var(--slate-deep); font-size: 12.5px;
+      }
+      kbd {
+        font: 11px ui-monospace, Menlo, monospace; color: var(--slate);
+        border: 1px solid var(--slate-deep); border-radius: 3px;
+        padding: 1px 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Rendering Talk — Visuals</h1>
+      <p>Animations for the talk on the mathematics of path tracing.</p>
+    </header>
+    <main id="list"></main>
+    <footer>
+      In any demo: <kbd>S</kbd> save PNG · <kbd>V</kbd> render mp4 · <kbd>H</kbd> hide panel ·
+      <kbd>space</kbd> pause. Exports land in <code>out/</code>.
+    </footer>
+    <script type="module" src="/src/gallery.ts"></script>
+  </body>
+</html>

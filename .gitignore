@@ -1,0 +1,9 @@
+node_modules/
+dist/
+
+# Rendered output: PNG stills, frame sequences, and encoded movies.
+# Large and reproducible — keep them out of git.
+out/
+
+.DS_Store
+*.log
