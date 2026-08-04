@@ -77,8 +77,19 @@ Demos animate from the `t` handed to `stage.frame((t, dt) => …)`, **not** from
 take as long as it likes per frame. Reach for wallclock inside a demo and video
 export silently starts stuttering.
 
+**Never call `Math.random()` in a demo.** The exporter renders a frame by
+setting `t` and re-running your update, so anything that reseeds per frame
+produces different values every frame and the video boils with noise. Draw a
+fixed stream once with `uniformStream()` from `src/sampling.ts` and index into
+it. In a mode where nothing should move, every exported frame should come out
+byte-identical.
+
 `stage.duration` is the loop period. Make a motion complete exactly one cycle
 over `duration` and the exported video loops seamlessly.
+
+The Capture folder's `seconds` is independent of `duration`. If a demo ramps
+something over its loop, export the full `duration` or you will only capture
+part of the ramp.
 
 ## Framing
 
@@ -96,6 +107,9 @@ demos/<name>/main.ts   one sketch, self-contained
 src/style.ts           the palette and materials — retune here to restyle everything
 src/stage.ts           renderer, camera, 16:9 letterbox, the clock
 src/lines.ts           thick lines, graphs, axes (THREE.Line is 1px and unusable)
+src/text.ts            in-canvas labels, so numbers appear in exports
+src/functions.ts       shared integrands, so demos compare like for like
+src/sampling.ts        seeded RNG + inverse-CDF densities (importance sampling)
 src/capture.ts         stills and frame-stepped video
 src/ui.ts              lil-gui panel and keyboard shortcuts
 src/registry.ts        demo discovery + optional titles for the index page
@@ -112,6 +126,12 @@ scalar cold→hot.
 
 The control panel is DOM, so it can never appear in an exported PNG or mp4.
 Press `H` before a screen recording.
+
+Labels use `label()` from `src/text.ts`, which draws real geometry inside the
+canvas — DOM text would be invisible in every export. The font (STIX Two Text,
+OFL) is vendored in `src/assets/` rather than fetched from a CDN, so renders
+work offline. It is a Latin subset, so there is no `∫` or `Σ`; labels spell
+things out instead, which reads better projected anyway.
 
 ## Requirements
 

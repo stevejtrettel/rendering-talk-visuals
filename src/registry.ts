@@ -17,6 +17,21 @@ export interface DemoInfo {
 
 /** Optional metadata, keyed by folder name. */
 export const INFO: Record<string, DemoInfo> = {
+  'importance-sampling': {
+    title: 'Importance Sampling',
+    blurb: 'Uniform vs normal sampling on a bump with dead tails, stacked. Same random numbers, aimed differently.',
+    section: 'Integration',
+  },
+  'monte-carlo-1d': {
+    title: 'Monte Carlo (1D)',
+    blurb: 'Random samples, each carrying a bar whose area is its contribution. Uniform vs importance sampling.',
+    section: 'Integration',
+  },
+  'riemann-1d': {
+    title: 'Riemann Sums (1D)',
+    blurb: 'Midpoint bars under a lumpy function. Full sum, left-to-right sweep, or a convergence ramp.',
+    section: 'Integration',
+  },
   'hello-3d': {
     title: 'Hello 3D',
     blurb: 'Palette and lighting check — mineral colours against the void.',

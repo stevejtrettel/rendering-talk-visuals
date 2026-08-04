@@ -170,5 +170,9 @@ export function createUI(stage: Stage, opts: UIOptions = {}): DemoUI {
     }
   });
 
-  return { gui, params: gui.addFolder('Parameters'), toast };
+  const api: DemoUI = { gui, params: gui.addFolder('Parameters'), toast };
+  // Handy from the devtools console, and lets scripted screenshots drive the
+  // controls: __ui.params.controllers.find(c => c.property === 'mode').setValue('sweep')
+  (window as any).__ui = api;
+  return api;
 }

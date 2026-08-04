@@ -12,6 +12,7 @@
  */
 
 import type { Stage } from './stage';
+import { textSettled } from './text';
 
 export interface VideoOptions {
   /** Seconds of footage. Defaults to the stage's loop duration. */
@@ -38,6 +39,7 @@ function nextFrame(): Promise<void> {
 /** Save a single PNG at full export resolution into out/stills/. */
 export async function saveStill(stage: Stage, name: string): Promise<string> {
   return stage.atExportSize(async () => {
+    await textSettled();
     stage.render();
     await nextFrame();
     const blob = await canvasBlob(stage.canvas);
@@ -81,6 +83,10 @@ export async function saveVideo(
     return await stage.atExportSize(async () => {
       for (let i = 0; i < total; i++) {
         stage.setTime(startTime + i / fps);
+        // Labels changed by that update are still laying out; wait for them,
+        // then redraw, or the frame captures the previous frame's numbers.
+        await textSettled();
+        stage.render();
         await nextFrame();
         const blob = await canvasBlob(stage.canvas);
         const res = await fetch(`/__frame?name=${encodeURIComponent(name)}&i=${i}`, {
