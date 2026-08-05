@@ -75,7 +75,7 @@ stage.duration = 18;
 const ui = createUI(stage);
 
 buildRoom(stage);
-const panel = createSpectrumPanel(stage, 'the spectrum leaving p in this direction');
+const panel = createSpectrumPanel(stage, 'Spectrum');
 
 // ---------------------------------------------------------------------------
 // Walking the boundary

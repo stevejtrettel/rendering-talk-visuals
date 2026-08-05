@@ -87,9 +87,11 @@ byte-identical.
 `stage.duration` is the loop period. Make a motion complete exactly one cycle
 over `duration` and the exported video loops seamlessly.
 
-The Capture folder's `seconds` is independent of `duration`. If a demo ramps
-something over its loop, export the full `duration` or you will only capture
-part of the ramp.
+**Export renders exactly one loop.** It restarts at `t = 0` and captures
+`stage.duration` seconds, so the only thing to set is the frame rate. There is
+no length control on purpose: stop short and the motion is cut mid-cycle, run
+over and the movie repeats itself. Set `stage.duration` to the length you want
+and press `V`.
 
 ## Framing
 
@@ -124,6 +126,7 @@ src/lines.ts           thick lines, graphs, axes (THREE.Line is 1px and unusable
 src/text.ts            in-canvas labels, so numbers appear in exports
 src/functions.ts       shared integrands, so demos compare like for like
 src/response.ts        the CIE observer and the spectrum-to-colour step
+src/still-life.ts      the subject the camera demos photograph, as spectra
 src/field2d.ts         shared 3D scenery for the surface demos
 src/room2d.ts          shared 2D room, spectra and graph panel for the light-field demos
 src/sampling.ts        seeded RNG + inverse-CDF densities (importance sampling)

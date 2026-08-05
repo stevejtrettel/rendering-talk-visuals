@@ -56,13 +56,19 @@ const ui = createUI(stage);
 // ---------------------------------------------------------------------------
 
 const RX = 2.55;
-const RY = 2.0;
+const RY = 2.196;
 const WALL = 0.16;
-const DISC = { x: -0.7, y: -0.75, r: 0.62 };
+const DISC = { x: -0.78, y: -0.85, r: 0.709 };
 const ROOM_Y = 0.15;
 
 const NW = 40;
-const ND = 52;
+/**
+ * Facets around the object. Coarse on purpose: it is a polygon, not a circle
+ * drawn coarsely, and at 16 you can count them. The form factors, the visibility
+ * tests and the ray casts all use these same flat facets, so the hard-edged look
+ * is the truth rather than a drawing trick.
+ */
+const ND = 16;
 const M = 4 * NW + ND;
 
 /**
@@ -138,32 +144,46 @@ for (let side = 0; side < 4; side++) {
   }
 }
 
+// The object: a regular polygon. DISC.r is the circumradius, so its vertices
+// sit where the old circle was, and each patch is one flat facet.
+const APOTHEM = DISC.r * Math.cos(Math.PI / ND);
 for (let k = 0; k < ND; k++) {
-  const a = (2 * Math.PI * (k + 0.5)) / ND - Math.PI;
-  const nx = Math.cos(a);
-  const ny = Math.sin(a);
+  const mid = (2 * Math.PI * (k + 0.5)) / ND;
+  const nx = Math.cos(mid);
+  const ny = Math.sin(mid);
   patches.push({
-    x: DISC.x + DISC.r * nx,
-    y: DISC.y + DISC.r * ny,
+    x: DISC.x + APOTHEM * nx,
+    y: DISC.y + APOTHEM * ny,
     nx,
     ny,
-    ds: (2 * Math.PI * DISC.r) / ND,
+    ds: 2 * DISC.r * Math.sin(Math.PI / ND),
     mat: 4,
   });
 }
 
+/** Does the segment between two boundary points cross the object? */
 function blocked(a: Patch, b: Patch): boolean {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
-  const len = Math.hypot(dx, dy);
-  if (len < 1e-9) return true;
-  const ux = dx / len;
-  const uy = dy / len;
-  const ox = a.x - DISC.x;
-  const oy = a.y - DISC.y;
-  const t = -(ox * ux + oy * uy);
-  if (t <= 0 || t >= len) return false;
-  return Math.hypot(ox + ux * t, oy + uy * t) < DISC.r - 1e-3;
+  if (Math.hypot(dx, dy) < 1e-9) return true;
+  for (let k = 0; k < ND; k++) {
+    const f0 = (2 * Math.PI * k) / ND;
+    const f1 = (2 * Math.PI * (k + 1)) / ND;
+    const ax = DISC.x + DISC.r * Math.cos(f0);
+    const ay = DISC.y + DISC.r * Math.sin(f0);
+    const ex = DISC.r * (Math.cos(f1) - Math.cos(f0));
+    const ey = DISC.r * (Math.sin(f1) - Math.sin(f0));
+    const den = dx * ey - dy * ex;
+    if (Math.abs(den) < 1e-12) continue;
+    const rx = ax - a.x;
+    const ry = ay - a.y;
+    const t = (rx * ey - ry * ex) / den;
+    const u = (rx * dy - ry * dx) / den;
+    // Both endpoints sit *on* the boundary, so both parameters are kept off
+    // their ends — otherwise every facet blocks itself.
+    if (t > 1e-3 && t < 1 - 1e-3 && u > 1e-6 && u < 1 - 1e-6) return true;
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -281,6 +301,7 @@ const FRAG = /* glsl */ `
   const float ROOM_Y = ${ROOM_Y.toFixed(4)};
   const int NW = ${NW};
   const int ND = ${ND};
+  const float APOTHEM = ${APOTHEM.toFixed(5)};
   const int M = ${M};
   const int GATHER = 64;
 
@@ -291,9 +312,63 @@ const FRAG = /* glsl */ `
     return 3 * NW + int(clamp(floor((RY - q.y) / (2.0 * RY) * float(NW)), 0.0, float(NW - 1)));
   }
 
-  int patchOfDisc(vec2 n) {
+  /** Which facet a direction from the centre falls in. */
+  int facetOf(vec2 d) {
+    float a = atan(d.y, d.x);
+    if (a < 0.0) a += 6.2831853;
+    return int(clamp(floor(a / 6.2831853 * float(ND)), 0.0, float(ND - 1)));
+  }
+
+  /** Inside the polygon? For a regular one, only the facet facing p can bind. */
+  bool insidePoly(vec2 p) {
+    vec2 d = p - DISC;
+    if (dot(d, d) > DISC_R * DISC_R) return false;
+    float mid = 6.2831853 * (float(facetOf(d)) + 0.5) / float(ND);
+    return dot(d, vec2(cos(mid), sin(mid))) < APOTHEM;
+  }
+
+  /**
+   * Nearest facet along the ray. The bounding circle is tested first, so the
+   * rays that miss the object — most of them — cost one test rather than ND.
+   */
+  void hitPoly(vec2 p, vec2 dir, out float bestT, out int bestK) {
+    bestT = 1e9;
+    bestK = -1;
+    vec2 oc = p - DISC;
+    float b = dot(oc, dir);
+    float c = dot(oc, oc) - DISC_R * DISC_R;
+    if (c > 0.0 && (b > 0.0 || b * b - c < 0.0)) return;
+    for (int k = 0; k < ND; k++) {
+      float f0 = 6.2831853 * float(k) / float(ND);
+      float f1 = 6.2831853 * float(k + 1) / float(ND);
+      vec2 a = DISC + DISC_R * vec2(cos(f0), sin(f0));
+      vec2 e = DISC_R * (vec2(cos(f1), sin(f1)) - vec2(cos(f0), sin(f0)));
+      float den = dir.x * e.y - dir.y * e.x;
+      if (abs(den) < 1e-9) continue;
+      vec2 r = a - p;
+      float t = (r.x * e.y - r.y * e.x) / den;
+      float u = (r.x * dir.y - r.y * dir.x) / den;
+      if (t <= 1e-4 || u < 0.0 || u > 1.0) continue;
+      if (t < bestT) {
+        bestT = t;
+        bestK = k;
+      }
+    }
+  }
+
+  /** Darken the last sliver of a patch, so the tiling is visible. */
+  float seam(float f) {
+    return 0.45 + 0.55 * smoothstep(0.0, 0.09, min(f, 1.0 - f));
+  }
+  float seamDisc(vec2 n) {
     float a = atan(n.y, n.x) + 3.14159265;
-    return 4 * NW + int(clamp(floor(a / 6.2831853 * float(ND)), 0.0, float(ND - 1)));
+    return seam(fract(a / 6.2831853 * float(ND)));
+  }
+  float seamWall(vec2 q) {
+    if (q.y <= -RY + 1e-3) return seam(fract((q.x + RX) / (2.0 * RX) * float(NW)));
+    if (q.x >= RX - 1e-3) return seam(fract((q.y + RY) / (2.0 * RY) * float(NW)));
+    if (q.y >= RY - 1e-3) return seam(fract((RX - q.x) / (2.0 * RX) * float(NW)));
+    return seam(fract((RY - q.y) / (2.0 * RY) * float(NW)));
   }
 
   vec3 radianceOf(int idx) {
@@ -304,16 +379,12 @@ const FRAG = /* glsl */ `
     float best = 1e9;
     int idx = -1;
 
-    vec2 oc = p - DISC;
-    float b = dot(oc, dir);
-    float c = dot(oc, oc) - DISC_R * DISC_R;
-    float d = b * b - c;
-    if (d > 0.0) {
-      float t = -b - sqrt(d);
-      if (t > 1e-4) {
-        best = t;
-        idx = patchOfDisc(normalize(p + dir * t - DISC));
-      }
+    float polyT;
+    int polyK;
+    hitPoly(p, dir, polyT, polyK);
+    if (polyK >= 0) {
+      best = polyT;
+      idx = 4 * NW + polyK;
     }
 
     float tx = dir.x > 1e-6 ? (RX - p.x) / dir.x : (dir.x < -1e-6 ? (-RX - p.x) / dir.x : 1e9);
@@ -335,10 +406,17 @@ const FRAG = /* glsl */ `
 
     vec3 col;
     if (abs(p.x) > RX || abs(p.y) > RY) {
-      col = radianceOf(patchOfWall(vec2(clamp(p.x, -RX, RX), clamp(p.y, -RY, RY))));
-    } else if (length(p - DISC) < DISC_R) {
-      vec2 n = normalize(p - DISC);
-      col = radianceOf(patchOfDisc(n)) * (0.35 + 0.65 * length(p - DISC) / DISC_R);
+      vec2 q = vec2(clamp(p.x, -RX, RX), clamp(p.y, -RY, RY));
+      col = radianceOf(patchOfWall(q)) * seamWall(q);
+    } else if (insidePoly(p)) {
+      // A tiled rim over a dark body: what is discretised is the light field on
+      // the boundary, one radiance per facet, so the boundary is what is lit.
+      vec2 d = p - DISC;
+      int k = facetOf(d);
+      float mid = 6.2831853 * (float(k) + 0.5) / float(ND);
+      float depth = APOTHEM - dot(d, vec2(cos(mid), sin(mid)));
+      float rim = 1.0 - smoothstep(0.05, 0.15, depth);
+      col = radianceOf(4 * NW + k) * seamDisc(normalize(d)) * rim;
     } else {
       float jit = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
       vec3 g = vec3(0.0);
@@ -376,8 +454,11 @@ const fieldCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 fieldScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), fieldMat));
 
 const target = new THREE.WebGLRenderTarget(64, 64, {
-  minFilter: THREE.LinearFilter,
-  magFilter: THREE.LinearFilter,
+  // Nearest, not linear: this demo has discretised the transport to linear
+  // algebra, so the grid it is computed on should be visible rather than
+  // smoothed away.
+  minFilter: THREE.NearestFilter,
+  magFilter: THREE.NearestFilter,
   depthBuffer: false,
 });
 

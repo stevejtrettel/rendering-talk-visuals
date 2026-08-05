@@ -22,6 +22,11 @@ export const INFO: Record<string, DemoInfo> = {
     blurb: 'A 2D room, the circle of directions at a point, and the spectrum carried by the ray in each direction.',
     section: 'Modeling Light',
   },
+  'contraction-2d': {
+    title: 'A Contraction in the Plane',
+    blurb: 'A grid slides into its image under a swirling contraction, then into its image again. Every generation stays behind, and the nest winds onto the fixed point.',
+    section: 'Modeling the Light Field',
+  },
   'light-dies-out': {
     title: 'Without Emitters, Light Dies Out',
     blurb: 'A brightly lit room with nothing emitting, iterating T alone. Everything decays, but the pale walls let their corridor linger.',
@@ -32,6 +37,16 @@ export const INFO: Record<string, DemoInfo> = {
     blurb: 'Two rooms iterating E + TL from wildly different starts, converging to the same field. The operator is a real matrix on boundary patches.',
     section: 'Modeling the Light Field',
   },
+  'bounce-series': {
+    title: 'The Light Field is a Geometric Series',
+    blurb: 'E + TE + T-squared E + ... one term at a time, with the sum beside it. The terms are sorted by bounce count, and this is where paths come from.',
+    section: 'Solving for the Light Field',
+  },
+  'path-space': {
+    title: 'The Space of Paths',
+    blurb: 'The same series drawn as paths: length k on the left, every path so far on the right, sweeping to fill in the continuum.',
+    section: 'Solving for the Light Field',
+  },
   'linear-scene': {
     title: 'The Scene is a Linear Map',
     blurb: 'One lamp, then the other, then both — three rooms simulated independently, with the spectrum at a shared probe stacking exactly.',
@@ -41,6 +56,16 @@ export const INFO: Record<string, DemoInfo> = {
     title: 'A Material is a Measure on Directions',
     blurb: 'Lambertian, read at one point: the circle of directions, the measure standing off it, and an outgoing direction that sweeps while the measure stays put.',
     section: 'Modeling Materials',
+  },
+  metamerism: {
+    title: 'The Kernel of the Sensor',
+    blurb: 'One reflectance walks the fibre of rho while the three numbers hold exactly. Change the lamp and the match falls apart.',
+    section: 'Modeling the Camera',
+  },
+  'pixel-lens': {
+    title: 'Which Light Reaches a Pixel',
+    blurb: 'A point on the pixel and a point on the aperture name one ray. Walk every pairing, carry back what each ray finds, and average.',
+    section: 'Modeling the Camera',
   },
   'pixel-image': {
     title: 'An Image is One Value per Pixel',
@@ -66,6 +91,11 @@ export const INFO: Record<string, DemoInfo> = {
     title: 'Radiance on the Boundary',
     blurb: 'The same room, with p walking the scene boundary and a vector sweeping the hemisphere that points into it.',
     section: 'Modeling Light',
+  },
+  'curse-of-dimension': {
+    title: 'Riemann Sums, and Dimension',
+    blurb: 'Error against cost, log-log, as the dimension climbs. The grid curves fan out and flatten at slope -2/d; the sampled ones stay parallel at -1/2 in every dimension.',
+    section: 'Integration',
   },
   'riemann-2d': {
     title: 'Riemann Sums (2D)',

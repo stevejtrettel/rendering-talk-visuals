@@ -534,27 +534,19 @@ export function createSpectrumPanel(stage: Stage, title: string): SpectrumPanel 
     );
   }
 
-  // The vertical scale is in arbitrary units — only the shape, and the relative
-  // height between directions, carry meaning — so it is named, not numbered.
-  const yAxisLabel = label('radiance', {
-    size: 0.18,
-    color: C.slate,
-    anchorX: 'center',
-    anchorY: 'bottom',
-    position: [PX0 - 0.18, (PY0 + PY1) / 2, 0],
-  });
-  yAxisLabel.rotation.z = Math.PI / 2;
-  stage.add(yAxisLabel);
-
+  // One label, centred under the axis, so it reads as belonging to this graph.
+  // The axes used to be named too ("radiance", "wavelength (nm)"); they went
+  // with the rest of the words in the frame — the deck says it once and the
+  // ticks carry the rest.
   stage.add(
-    label('wavelength (nm)', {
-      size: 0.18,
-      color: C.slate,
+    label(title, {
+      size: 0.2,
+      color: C.ash,
       anchorX: 'center',
-      position: [(PX0 + PX1) / 2, PY0 - 0.62, 0],
+      anchorY: 'top',
+      position: [(PX0 + PX1) / 2, PY0 - 0.42, 0],
     }),
   );
-  stage.add(label(title, { size: 0.24, color: C.bone, position: [PX0, PY1 + 0.28, 0] }));
 
   // Curve and a wash of the same ink under it. Both keep a fixed vertex count
   // so they can be updated in place.

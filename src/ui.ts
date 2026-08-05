@@ -101,6 +101,19 @@ export function createUI(stage: Stage, opts: UIOptions = {}): DemoUI {
   // itself. So the button always renders exactly one loop from t = 0, and the
   // only thing left to choose is how finely it is sampled.
   const capture = { fps, format: 'mp4' as 'mp4' | 'prores' };
+
+  /** Restart at t = 0 and capture exactly one loop at the chosen frame rate. */
+  const renderLoop = () =>
+    saveVideo(stage, name, {
+      fps: capture.fps,
+      // Read at press time, not at panel-build time: a demo may have changed
+      // its duration, and exporting the old one would silently cut the motion.
+      duration: stage.duration,
+      startTime: 0,
+      format: capture.format,
+      onProgress: (d, t) => toast(`frame ${d}/${t}  (${Math.round((100 * d) / t)}%)`, 0),
+    });
+
   const f = gui.addFolder('Capture');
   f.add({ still: async () => {
       try {
@@ -121,18 +134,6 @@ export function createUI(stage: Stage, opts: UIOptions = {}): DemoUI {
         toast(`video failed: ${e}`, 6000);
       }
     } }, 'video').name('render one loop (V)');
-
-  /** Restart at t = 0 and capture exactly one loop at the chosen frame rate. */
-  const renderLoop = () =>
-    saveVideo(stage, name, {
-      fps: capture.fps,
-      // Read at press time, not at panel-build time: a demo may have changed
-      // its duration, and exporting the old one would silently cut the motion.
-      duration: stage.duration,
-      startTime: 0,
-      format: capture.format,
-      onProgress: (d, t) => toast(`frame ${d}/${t}  (${Math.round((100 * d) / t)}%)`, 0),
-    });
 
   // --- hint ----------------------------------------------------------------
   const hint = document.createElement('div');

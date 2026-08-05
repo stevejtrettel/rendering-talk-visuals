@@ -56,7 +56,7 @@ stage.duration = 14;
 const ui = createUI(stage);
 
 buildRoom(stage);
-const panel = createSpectrumPanel(stage, 'the spectrum this ray carries');
+const panel = createSpectrumPanel(stage, 'Spectrum');
 
 // ---------------------------------------------------------------------------
 // The circle of directions at p

@@ -21,26 +21,20 @@
  *
  * ## Where the spectra come from
  *
- * Backwards from the picture, and honestly. Each cell carries a positive
- * combination of three broad smooth reflectances lit by the room demos' 5200 K
- * lamp, so every spectrum here is the kind of thing a real surface returns —
- * nothing is a delta, nothing is negative, and none of it was fitted to the CIE
- * curves. The still life is designed in the *weights*, and the colour of each
- * cell is then whatever the physics says it is.
- *
- * The three reflectances are scaled once so that equal weights give D65 white.
- * Without that the basis is skewed and every weight triple reads yellow-green,
- * which makes designing in weight space a fight rather than a convenience. The
- * scaling is a choice of units on three fixed curves, and changes no colour
- * relationship in the picture.
+ * From `src/still-life.ts`, which holds the subject so that `pixel-lens` can
+ * photograph the same one — its accumulated spectrum is then literally one of
+ * the cells here rather than a similar-looking curve. Every spectrum is a lit
+ * combination of three broad positive reflectances: the kind of thing a real
+ * surface returns, with nothing fitted to the CIE curves.
  */
 
 import * as THREE from 'three';
 import { createStage, createUI, C, flat } from '@';
 import { polyline } from '@/lines';
 import { label } from '@/text';
-import { WL0, WL1, NS, wavelength, lampSpectrum } from '@/room2d';
-import { CMF, CHANNEL_NAMES, bandNormalizer, xyzToDisplay } from '@/response';
+import { NS } from '@/room2d';
+import { CHANNEL_NAMES, xyzToDisplay } from '@/response';
+import { RESP, spectrumAt, project } from '@/still-life';
 
 // ---------------------------------------------------------------------------
 // Layout
@@ -77,128 +71,13 @@ const MROW = [1.15, 0.0, -1.15];
 const MUNIT = 0.3;
 
 // ---------------------------------------------------------------------------
-// Spectra
-// ---------------------------------------------------------------------------
-
-/**
- * Three broad, smooth, strictly positive reflectances. Deliberately wide:
- * real pigments are, and a narrow basis would make every colour in the picture
- * implausibly saturated — the still life would look like stained glass.
- */
-const BASIS: ((nm: number) => number)[] = [
-  (nm) => 0.04 + 0.96 / (1 + Math.exp(-(nm - 608) / 22)), // long
-  (nm) => 0.04 + 0.96 * Math.exp(-0.5 * ((nm - 540) / 42) ** 2), // middle
-  (nm) => 0.04 + 0.96 / (1 + Math.exp((nm - 489) / 24)), // short
-];
-
-const D_LAMBDA = (WL1 - WL0) / NS;
-const K = bandNormalizer(WL0, WL1, NS);
-
-// Sampled once: the lamp, the three response curves, the three reflectances.
-const LAMP = new Float32Array(NS + 1);
-const RESP = CMF.map(() => new Float32Array(NS + 1));
-const BASE = BASIS.map(() => new Float32Array(NS + 1));
-for (let k = 0; k <= NS; k++) {
-  const nm = wavelength(k);
-  LAMP[k] = lampSpectrum(nm);
-  for (let c = 0; c < 3; c++) RESP[c][k] = CMF[c](nm);
-  for (let b = 0; b < 3; b++) BASE[b][k] = BASIS[b](nm);
-}
-
-/** Solve a 3x3 system by Gaussian elimination with partial pivoting. */
-function solve3(A: number[][], rhs: number[]): number[] {
-  const m = A.map((row, i) => [...row, rhs[i]]);
-  for (let i = 0; i < 3; i++) {
-    let p = i;
-    for (let k = i + 1; k < 3; k++) if (Math.abs(m[k][i]) > Math.abs(m[p][i])) p = k;
-    [m[i], m[p]] = [m[p], m[i]];
-    for (let k = 0; k < 3; k++) {
-      if (k === i) continue;
-      const f = m[k][i] / m[i][i];
-      for (let j = i; j < 4; j++) m[k][j] -= f * m[i][j];
-    }
-  }
-  return [0, 1, 2].map((i) => m[i][3] / m[i][i]);
-}
-
-/** What one unit of reflectance `b` returns as a value, under the lamp. */
-function basisValue(b: number): [number, number, number] {
-  const out: [number, number, number] = [0, 0, 0];
-  for (let c = 0; c < 3; c++) {
-    let s = 0;
-    for (let k = 0; k <= NS; k++) {
-      s += LAMP[k] * BASE[b][k] * RESP[c][k] * (k === 0 || k === NS ? 0.5 : 1) * D_LAMBDA;
-    }
-    out[c] = s * K;
-  }
-  return out;
-}
-
-// Gains that put equal weights exactly on D65 white. Rows are X, Y, Z; the
-// columns are the three basis curves.
-const RAW = [0, 1, 2].map(basisValue);
-const GAIN = solve3(
-  [0, 1, 2].map((c) => [0, 1, 2].map((b) => RAW[b][c])),
-  [0.9505, 1.0, 1.089],
-);
-for (let b = 0; b < 3; b++) for (let k = 0; k <= NS; k++) BASE[b][k] *= GAIN[b];
-
-// ---------------------------------------------------------------------------
-// The still life, designed in weights
+// Precompute every cell
 // ---------------------------------------------------------------------------
 
 const smoothstep = (a: number, b: number, x: number) => {
   const t = Math.min(Math.max((x - a) / (b - a), 0), 1);
   return t * t * (3 - 2 * t);
 };
-type W3 = [number, number, number];
-const mixw = (a: W3, b: W3, t: number): W3 => [
-  a[0] + (b[0] - a[0]) * t,
-  a[1] + (b[1] - a[1]) * t,
-  a[2] + (b[2] - a[2]) * t,
-];
-
-/**
- * A fruit and a bottle on a table, against a wall — chosen because it survives
- * sixteen pixels across. Everything is a smooth primitive, so the grid samples
- * it cleanly instead of aliasing on hard edges.
- */
-function stillLife(u: number, v: number): W3 {
-  let w = mixw([0.3, 0.33, 0.42], [0.09, 0.11, 0.2], smoothstep(0.32, 1.0, v));
-  // a pool of light on the wall behind the objects
-  w = mixw(w, [0.42, 0.43, 0.48], 0.4 * Math.exp(-(((u - 0.44) / 0.3) ** 2 + ((v - 0.6) / 0.26) ** 2)));
-
-  const table = smoothstep(0.38, 0.34, v);
-  w = mixw(w, mixw([0.6, 0.27, 0.08], [0.24, 0.1, 0.03], smoothstep(0.34, 0.0, v)), table);
-
-  const shadow =
-    0.85 * Math.exp(-(((u - 0.33) / 0.155) ** 2 + ((v - 0.285) / 0.05) ** 2)) +
-    0.75 * Math.exp(-(((u - 0.69) / 0.115) ** 2 + ((v - 0.295) / 0.045) ** 2));
-  w = mixw(w, [0.13, 0.05, 0.02], Math.min(shadow, 0.9) * table);
-
-  const fruit = Math.hypot((u - 0.33) / 0.195, (v - 0.505) / 0.195);
-  if (fruit < 1) {
-    const lit = smoothstep(1.0, 0.1, Math.hypot((u - 0.26) / 0.9, (v - 0.6) / 0.9) * 1.6);
-    w = mixw(w, mixw([0.26, 0.04, 0.02], [1.0, 0.32, 0.05], lit), smoothstep(1.0, 0.84, fruit));
-  }
-
-  // A wider body and a gentler highlight than looks right at full resolution.
-  // At sixteen pixels across, the body is three cells: a strong shading ramp
-  // across it turns those three into stripes and the bottle stops being one
-  // object.
-  const body = Math.abs(u - 0.685) < 0.115 && v > 0.35 && v < 0.68;
-  const neck = Math.abs(u - 0.685) < 0.042 && v >= 0.68 && v < 0.84;
-  if (body || neck) {
-    const lit = smoothstep(0.14, 0.01, Math.abs(u - 0.645));
-    w = mixw(w, mixw([0.09, 0.38, 0.15], [0.15, 0.62, 0.22], lit), 0.95);
-  }
-
-  return w.map((x) => Math.min(Math.max(x, 0.015), 1)) as W3;
-}
-
-// ---------------------------------------------------------------------------
-// Precompute every cell
-// ---------------------------------------------------------------------------
 
 /** Samples per drawn mini-curve. Enough shape at a quarter of an inch. */
 const SAMP = 28;
@@ -214,36 +93,28 @@ interface Cell {
 const cells: Cell[] = [];
 let curveMax = 1e-9;
 
-for (let j = 0; j < N; j++) {
-  for (let i = 0; i < N; i++) {
-    const w = stillLife((i + 0.5) / N, 1 - (j + 0.5) / N);
+{
+  const spec = new Float32Array(NS + 1);
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      // The cell's spectrum, on the shared grid, and the value it produces.
+      spectrumAt((i + 0.5) / N, 1 - (j + 0.5) / N, spec);
+      const value = project(spec);
 
-    // The full spectrum, on the shared grid, and its value.
-    const value: [number, number, number] = [0, 0, 0];
-    for (let c = 0; c < 3; c++) {
-      let s = 0;
-      for (let k = 0; k <= NS; k++) {
-        const spec = LAMP[k] * (w[0] * BASE[0][k] + w[1] * BASE[1][k] + w[2] * BASE[2][k]);
-        s += spec * RESP[c][k] * (k === 0 || k === NS ? 0.5 : 1) * D_LAMBDA;
+      // A coarser copy for drawing.
+      const curve = new Float32Array(SAMP + 1);
+      for (let q = 0; q <= SAMP; q++) {
+        const k = (q / SAMP) * NS;
+        const k0 = Math.min(Math.floor(k), NS - 1);
+        const f = k - k0;
+        curve[q] = spec[k0] + (spec[k0 + 1] - spec[k0]) * f;
+        curveMax = Math.max(curveMax, curve[q]);
       }
-      value[c] = s * K;
-    }
 
-    // A coarser copy for drawing.
-    const curve = new Float32Array(SAMP + 1);
-    for (let q = 0; q <= SAMP; q++) {
-      const k = (q / SAMP) * NS;
-      const k0 = Math.min(Math.floor(k), NS - 1);
-      const f = k - k0;
-      const at = (idx: number) =>
-        LAMP[idx] * (w[0] * BASE[0][idx] + w[1] * BASE[1][idx] + w[2] * BASE[2][idx]);
-      curve[q] = at(k0) + (at(k0 + 1) - at(k0)) * f;
-      curveMax = Math.max(curveMax, curve[q]);
+      const { rgb } = xyzToDisplay(value[0], value[1], value[2]);
+      const color = new THREE.Color().setRGB(rgb[0], rgb[1], rgb[2], THREE.SRGBColorSpace);
+      cells.push({ curve, value, color });
     }
-
-    const { rgb } = xyzToDisplay(value[0], value[1], value[2]);
-    const color = new THREE.Color().setRGB(rgb[0], rgb[1], rgb[2], THREE.SRGBColorSpace);
-    cells.push({ curve, value, color });
   }
 }
 for (const cell of cells) for (let q = 0; q <= SAMP; q++) cell.curve[q] /= curveMax;
