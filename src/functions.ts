@@ -52,6 +52,57 @@ export function bumpy(x: number): number {
   return envelope * ripple;
 }
 
+// ---------------------------------------------------------------------------
+// A 2D landscape — the integrand for the surface demos
+// ---------------------------------------------------------------------------
+
+/** The 2D demos integrate over the square [-FIELD_HALF, FIELD_HALF]². */
+export const FIELD_HALF = 3;
+
+/** A small floor value, so the surface never collapses flat at the edges. */
+const FIELD_BASE = 0.12;
+
+/** Gaussian bumps: [centreX, centreY, sigmaX, sigmaY, height]. */
+const BUMPS: [number, number, number, number, number][] = [
+  [-0.9, -0.7, 0.9, 0.8, 1.55], // the tall peak
+  [1.35, 0.9, 1.25, 1.05, 0.95], // broad and medium
+  [0.5, -1.75, 0.7, 0.6, 0.62], // small and sharp
+  [-1.8, 1.5, 1.0, 0.9, 0.45], // low and wide
+];
+
+/**
+ * A landscape of Gaussian bumps at differing heights. Strictly positive, and
+ * smooth enough that a glass surface over it reads as elegant rather than
+ * noisy, while still varying enough that the bars underneath differ visibly.
+ */
+export function bumps2d(x: number, y: number): number {
+  let v = FIELD_BASE;
+  for (const [cx, cy, sx, sy, h] of BUMPS) {
+    const dx = (x - cx) / sx;
+    const dy = (y - cy) / sy;
+    v += h * Math.exp(-0.5 * (dx * dx + dy * dy));
+  }
+  return v;
+}
+
+/**
+ * The exact volume under `bumps2d` over the square.
+ *
+ * Each bump is separable — g(x,y) = h·gx(x)·gy(y) — so the double integral is
+ * a product of two 1D integrals rather than a brute-force grid. That is both
+ * far more accurate than a sampled reference and instant, which matters when
+ * the whole point of the demo is comparing estimates against it.
+ */
+export const FIELD_VOLUME = (() => {
+  const side = 2 * FIELD_HALF;
+  // ∫ exp(-((t-c)/s)²/2) dt over the domain, by Simpson on a fine grid.
+  const axis = (c: number, s: number) =>
+    simpson((t) => Math.exp(-0.5 * Math.pow((t - c) / s, 2)), -FIELD_HALF, FIELD_HALF, 4000);
+  let v = FIELD_BASE * side * side;
+  for (const [cx, cy, sx, sy, h] of BUMPS) v += h * axis(cx, sx) * axis(cy, sy);
+  return v;
+})();
+
 /** Definite integral by Simpson's rule. `n` must be even. */
 export function simpson(f: (x: number) => number, a: number, b: number, n = 20000): number {
   const h = (b - a) / n;

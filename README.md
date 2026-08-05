@@ -42,7 +42,7 @@ Everything lands in `out/`, and it is git-ignored.
 | Key | Action |
 | --- | --- |
 | `S` | Save a PNG still → `out/stills/<demo>-<timestamp>.png` |
-| `V` | Render a video → `out/<demo>.mp4` |
+| `V` | Render exactly one loop → `out/<demo>.mp4` |
 | `H` | Hide the control panel (for screen recording) |
 | `R` | Restart from t = 0 |
 | `space` | Play / pause |
@@ -100,6 +100,20 @@ export never reframes on you.
 Line widths are authored against 1080p and scale automatically, so a `width: 4`
 line has the same weight in a small preview window and in the rendered movie.
 
+In a 3D scene, put readouts on `stage.hud` — a flat overlay in fixed screen
+coordinates (y from −1 to +1, x from ∓16/9) drawn on top of the 3D image. World
+-space text swings around with the camera and changes size with distance, which
+is unreadable in a talk. The HUD is part of the canvas, so it exports.
+
+## Comparing two demos side by side
+
+Demos meant to be compared (`riemann-2d` and `monte-carlo-2d`) are separate
+demos rather than a split screen or a toggle: each gets the whole frame, and a
+toggle is useless in a talk since you cannot click mid-slide. They share a
+duration and an N-ramp, so the two exported videos are frame-synchronised —
+drop both into Keynote side by side and they stay in step, at full resolution
+each, with the option of showing either alone.
+
 ## Layout
 
 ```
@@ -109,6 +123,9 @@ src/stage.ts           renderer, camera, 16:9 letterbox, the clock
 src/lines.ts           thick lines, graphs, axes (THREE.Line is 1px and unusable)
 src/text.ts            in-canvas labels, so numbers appear in exports
 src/functions.ts       shared integrands, so demos compare like for like
+src/response.ts        the CIE observer and the spectrum-to-colour step
+src/field2d.ts         shared 3D scenery for the surface demos
+src/room2d.ts          shared 2D room, spectra and graph panel for the light-field demos
 src/sampling.ts        seeded RNG + inverse-CDF densities (importance sampling)
 src/capture.ts         stills and frame-stepped video
 src/ui.ts              lil-gui panel and keyboard shortcuts
@@ -126,6 +143,15 @@ scalar cold→hot.
 
 The control panel is DOM, so it can never appear in an exported PNG or mp4.
 Press `H` before a screen recording.
+
+**Computing a colour rather than picking one?** The stage renders through ACES
+tone mapping into sRGB, which is what holds the palette together and is right
+for anything that is scenery. A swatch showing a *computed* colour is not
+scenery — it has to be the colour it says it is. Set `toneMapped = false` on
+that material and pass the value with its colour space named
+(`color.setRGB(r, g, b, THREE.SRGBColorSpace)`), or three treats an already
+encoded colour as linear, encodes it a second time, and every value comes out
+washed out. `pixel-response` is the worked example.
 
 Labels use `label()` from `src/text.ts`, which draws real geometry inside the
 canvas — DOM text would be invisible in every export. The font (STIX Two Text,

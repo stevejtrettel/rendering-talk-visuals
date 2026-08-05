@@ -62,6 +62,8 @@ export class Stage {
   loop = true;
 
   private frameFns: FrameFn[] = [];
+  private _hud?: THREE.Scene;
+  private _hudCamera?: THREE.OrthographicCamera;
   private orthoHeight: number;
   private running = false;
   private lastWall = 0;
@@ -175,8 +177,33 @@ export class Stage {
     this.render();
   }
 
+  /**
+   * A flat overlay drawn on top of the 3D scene, in fixed screen coordinates:
+   * y runs −1 (bottom) to +1 (top), x runs ∓16/9. Put readouts and titles here
+   * — in a 3D scene, world-space text swings around with the camera and
+   * changes size with distance, which is unreadable in a talk.
+   *
+   * Created on first access, so demos that never use it pay nothing.
+   */
+  get hud(): THREE.Scene {
+    if (!this._hud) {
+      this._hud = new THREE.Scene();
+      this._hudCamera = new THREE.OrthographicCamera(-ASPECT, ASPECT, 1, -1, -100, 100);
+      this._hudCamera.position.z = 10;
+    }
+    return this._hud;
+  }
+
   render(): void {
     this.renderer.render(this.scene, this.camera);
+    if (this._hud && this._hudCamera) {
+      // Draw the overlay without wiping the 3D image underneath it.
+      const prevAutoClear = this.renderer.autoClear;
+      this.renderer.autoClear = false;
+      this.renderer.clearDepth();
+      this.renderer.render(this._hud, this._hudCamera);
+      this.renderer.autoClear = prevAutoClear;
+    }
   }
 
   /** Start the live preview loop. */
