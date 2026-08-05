@@ -138,6 +138,12 @@ The deck's audience is mathematicians, and the pictures are arguments.
 - **State readability-over-physics choices in the header.** Ambient floors,
   gathered-light weights, RGB proxies for spectra: all fine, all written down
   where they are made.
+- **The `light-field-*` demos draw solved data, not a shading model** — a real
+  baked radiance field imported from the `light-field` repo. Several of their
+  pictures are claims about what is *stored*, and a reasonable-looking edit can
+  quietly turn one into a lie (re-indexing a fiber is fine, re-computing it is
+  not; a black cell there is usually backface radiance, not absence). Read
+  `notes/light-field-demos.md` before touching them.
 
 ## Animation grammar
 
@@ -167,6 +173,10 @@ src/style.ts       palette — retune here to restyle everything
 src/stage.ts       renderer, 16:9 letterbox, the clock
 src/lines.ts       thick lines (THREE.Line is 1px and unusable)
 src/text.ts        in-canvas labels, so text survives export
+src/lightfield/    a baked light field, imported as data from the light-field
+                   repo: the bundle reader, the octahedral map, the peel, and
+                   the shared unwrap scene the three light-field-* demos use
+                   (see notes/light-field-demos.md)
 ```
 
 Demos own their own layout constants. Frame is 16:9, half-height 3, so
