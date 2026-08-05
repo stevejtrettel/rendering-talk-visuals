@@ -41,6 +41,9 @@ const stage = createStage({
   controls: false,
 });
 stage.duration = 8;
+// The finished sum is the point of both animated modes, so the ramp completes
+// early and the picture sits on its last subdivision before the loop restarts.
+const HOLD = 1.6;
 
 const ui = createUI(stage);
 
@@ -152,7 +155,7 @@ const smoothstep = (x: number) => {
 };
 
 stage.frame((t) => {
-  const u = stage.duration > 0 ? (t % stage.duration) / stage.duration : 0;
+  const u = stage.progress(t, HOLD);
 
   let n = Math.round(params.N);
   if (params.mode === 'converge') {

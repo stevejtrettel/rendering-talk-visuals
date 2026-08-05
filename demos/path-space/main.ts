@@ -88,7 +88,7 @@ const ui = createUI(stage);
 const RX = 1.8;
 const RY = 1.55;
 const WALL = 0.14;
-const DISC = { x: -0.551, y: -0.6, r: 0.5 };
+const DISC = { x: -0.551, y: -1.049, r: 0.5 };
 const EMIT_HALF = 0.45;
 
 const NW = 36;
@@ -133,12 +133,26 @@ function planck(nm: number, T: number): number {
   return 3.7418e-16 / (l ** 5 * (Math.exp(1.4388e-2 / (l * T)) - 1));
 }
 
+/**
+ * Bright walls, and a lamp turned down to compensate.
+ *
+ * The point of both demos is the light that has bounced, and at a low albedo it
+ * is gone by the third term — there is nothing left to look at. Raising the
+ * walls makes each term survive further, so the series has visible tail; the
+ * emission comes down so the room is not blown out by the first term. The
+ * coloured walls also keep a floor of 0.16 across the band rather than 0.05, so
+ * they reflect *something* at every wavelength and the deep bounces stay
+ * coloured instead of collapsing to a single hue.
+ *
+ * This is a slower contraction on purpose, which is the honest trade: more
+ * terms matter, and the sum takes longer to settle.
+ */
 const ALBEDO_RGB = [
-  toRGB(() => 0.62),
-  toRGB((l) => 0.05 + 0.92 * bell(l, 645, 46)),
-  toRGB(() => 0.6),
-  toRGB((l) => 0.05 + 0.88 * bell(l, 545, 42)),
-  toRGB(() => 0.66),
+  toRGB(() => 0.82),
+  toRGB((l) => 0.16 + 0.84 * bell(l, 645, 46)),
+  toRGB(() => 0.82),
+  toRGB((l) => 0.16 + 0.8 * bell(l, 545, 42)),
+  toRGB(() => 0.84),
 ];
 
 const peakPlanck = (() => {
@@ -385,7 +399,11 @@ const solved = new Float32Array(M * 3);
 const termSize: number[] = [];
 
 /** Where the paths start: on the floor, left of the object. */
-const P0 = { x: -0.62, y: -RY, nx: 0, ny: 1, mat: 0 };
+// Clear of the object, which sits at x = -0.55 with radius 0.5 and would
+// otherwise be directly overhead — every path would start in its shadow.
+// Off to one side instead, so the sweep sends paths past it, onto it, and up
+// to the emitter.
+const P0 = { x: 0.7, y: -RY, nx: 0, ny: 1, mat: 0 };
 const P0_PATCH = Math.min(NW - 1, Math.max(0, Math.floor(((P0.x + RX) / (2 * RX)) * NW)));
 
 function solveField(): void {
@@ -446,7 +464,9 @@ const FRAG = /* glsl */ `
 
   /** Darken the last sliver of a patch, so the tiling is visible. */
   float seam(float f) {
-    return 0.45 + 0.55 * smoothstep(0.0, 0.09, min(f, 1.0 - f));
+    // Near-black and wide: the gaps between patches are the point, so they are
+    // drawn as gaps rather than as a hint of shading.
+    return 0.12 + 0.88 * smoothstep(0.0, 0.15, min(f, 1.0 - f));
   }
   float seamDisc(vec2 n) {
     float a = atan(n.y, n.x);
@@ -702,7 +722,12 @@ function commit(buf: Buffer): void {
 }
 
 const live = makeBuffer(LIVE_SEG, PANEL_X[0], 1.5, 0.95);
-const accum = makeBuffer(ACC_SEG, PANEL_X[1], 1.4, 0.9);
+const accum = makeBuffer(ACC_SEG, PANEL_X[1], 1.4, 1);
+// Contributions add. Overlapping paths reinforcing is the sum being drawn, not
+// an artefact — and it is what makes a weak path fade into the room instead of
+// turning black, which is the wrong reading entirely.
+accum.lines.material.blending = THREE.AdditiveBlending;
+accum.lines.material.depthWrite = false;
 
 function push(buf: Buffer, x1: number, y1: number, x2: number, y2: number, c: number[]): void {
   if (buf.count * 6 + 5 >= buf.pos.length) return;
@@ -740,6 +765,7 @@ function walk(
   u: (j: number) => number,
   gain: number,
   litOnly: boolean,
+  weightByLight = false,
 ): void {
   let px = P0.x;
   let py = P0.y;
@@ -769,9 +795,27 @@ function walk(
       if (litOnly && !hit.emits) return;
       let col: number[] = DARK;
       if (hit.emits) {
-        litCol[0] = Math.min(tr * EMIT_RGB[0] * gain, 1);
-        litCol[1] = Math.min(tg * EMIT_RGB[1] * gain, 1);
-        litCol[2] = Math.min(tb * EMIT_RGB[2] * gain, 1);
+        const r = tr * EMIT_RGB[0];
+        const g = tg * EMIT_RGB[1];
+        const b = tb * EMIT_RGB[2];
+        if (weightByLight) {
+          // Drawn additively, so a path's strength *is* how much it adds. A
+          // faint one contributes almost nothing to the pixel and disappears
+          // into the room; a strong one glows; and where many overlap they build
+          // up — which is the sum this panel is drawing, done by the blend
+          // rather than asserted.
+          //
+          // Divided by the number of sweep positions so the panel's brightness
+          // reports the light rather than how finely the sweep was sampled:
+          // without it, doubling the sampling doubles the glow.
+          litCol[0] = (r * gain) / ACC_STEPS;
+          litCol[1] = (g * gain) / ACC_STEPS;
+          litCol[2] = (b * gain) / ACC_STEPS;
+        } else {
+          litCol[0] = Math.min(r * gain, 1);
+          litCol[1] = Math.min(g * gain, 1);
+          litCol[2] = Math.min(b * gain, 1);
+        }
         col = litCol;
       }
       for (let s = 0; s < k; s++) {
@@ -826,6 +870,7 @@ function buildPaths(k: number, s: number, gain: number): void {
           kk,
           (j) => (j === 0 ? ((i + 0.5) / ACC_N + ss) % 1 : vdc(i, BASES[j % BASES.length])),
           gain,
+          true,
           true,
         );
       }
@@ -941,7 +986,7 @@ const params = {
   k: 2,
   sweep: 0.5,
   albedo: 0.78,
-  emission: 1.7,
+  emission: 1.15,
   gain: 2.6,
   background: 0.62,
   resolution: 0.4,

@@ -95,7 +95,7 @@ const WALL = 0.14;
  * That corner is black at term 1 and only fills in at term 2 — the single
  * clearest reading of "this light has bounced".
  */
-const DISC = { x: -0.551, y: -0.6, r: 0.5 };
+const DISC = { x: -0.551, y: -1.049, r: 0.5 };
 
 const NW = 36;
 /**
@@ -151,12 +151,26 @@ function planck(nm: number, T: number): number {
  * whole point of the second term, and a coloured floor would hide it — you
  * cannot see red light landing on a red floor.
  */
+/**
+ * Bright walls, and a lamp turned down to compensate.
+ *
+ * The point of both demos is the light that has bounced, and at a low albedo it
+ * is gone by the third term — there is nothing left to look at. Raising the
+ * walls makes each term survive further, so the series has visible tail; the
+ * emission comes down so the room is not blown out by the first term. The
+ * coloured walls also keep a floor of 0.16 across the band rather than 0.05, so
+ * they reflect *something* at every wavelength and the deep bounces stay
+ * coloured instead of collapsing to a single hue.
+ *
+ * This is a slower contraction on purpose, which is the honest trade: more
+ * terms matter, and the sum takes longer to settle.
+ */
 const ALBEDO_RGB = [
-  toRGB(() => 0.62), // 0 floor, neutral
-  toRGB((l) => 0.05 + 0.92 * bell(l, 645, 46)), // 1 right wall, rust
-  toRGB(() => 0.6), // 2 ceiling, neutral
-  toRGB((l) => 0.05 + 0.88 * bell(l, 545, 42)), // 3 left wall, moss
-  toRGB(() => 0.66), // 4 the object, neutral
+  toRGB(() => 0.82), // 0 floor, neutral
+  toRGB((l) => 0.16 + 0.84 * bell(l, 645, 46)), // 1 right wall, rust
+  toRGB(() => 0.82), // 2 ceiling, neutral
+  toRGB((l) => 0.16 + 0.8 * bell(l, 545, 42)), // 3 left wall, moss
+  toRGB(() => 0.84), // 4 the object, neutral
 ];
 
 const peakPlanck = (() => {
@@ -440,7 +454,9 @@ const FRAG = /* glsl */ `
 
   /** Darken the last sliver of a patch, so the tiling is visible. */
   float seam(float f) {
-    return 0.45 + 0.55 * smoothstep(0.0, 0.09, min(f, 1.0 - f));
+    // Near-black and wide: the gaps between patches are the point, so they are
+    // drawn as gaps rather than as a hint of shading.
+    return 0.12 + 0.88 * smoothstep(0.0, 0.15, min(f, 1.0 - f));
   }
   float seamDisc(vec2 n) {
     float a = atan(n.y, n.x);
@@ -756,7 +772,7 @@ const params = {
   run: true,
   n: 3,
   albedo: 0.78,
-  emission: 1.7,
+  emission: 1.15,
   exposure: 1.15,
   normalise: false,
   resolution: 0.45,

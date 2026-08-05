@@ -16,6 +16,7 @@ import type { Stage } from './stage';
 import { C, flat } from './style';
 import { polyline } from './lines';
 import { label } from './text';
+import { room } from './scene2d';
 
 // ---------------------------------------------------------------------------
 // Geometry
@@ -28,15 +29,22 @@ export interface Vec {
 
 export const v = (x: number, y: number): Vec => ({ x, y });
 
+// The continuous version of the shared room: same proportions, same object
+// placement, same pigments as the discretised demos — a smooth circle instead
+// of a polygon, because these demos are doing continuous mathematics.
+const ROOM = room(2.725);
 /** Interior corners of the box. Walls are drawn as slabs outside these lines. */
 export const X0 = -5.0;
-export const X1 = 0.45;
-export const Y0 = -2.5;
-export const Y1 = 2.4;
-export const SLAB = 0.22;
+export const X1 = X0 + 2 * ROOM.rx;
+export const Y0 = -ROOM.ry - 0.05;
+export const Y1 = Y0 + 2 * ROOM.ry;
+export const SLAB = ROOM.wall;
 
-/** The object in the room. Sits exactly tangent to the floor. */
-export const DISC = { c: v(-3.2, -1.3), r: 1.2 };
+/** The object in the room, as a smooth circle. */
+export const DISC = {
+  c: v((X0 + X1) / 2 + ROOM.disc.x, (Y0 + Y1) / 2 + ROOM.disc.y),
+  r: ROOM.disc.r,
+};
 export const LAMP = { c: v(-0.9, 1.55), r: 0.32 };
 
 // ---------------------------------------------------------------------------

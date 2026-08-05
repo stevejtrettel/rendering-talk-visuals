@@ -33,11 +33,30 @@
  *
  * ## Iterations, not seconds
  *
- * The counter steps and the picture jumps. The index counts applications of the
- * map — each one is also one more scattering event, but what the slide is doing
- * is iterating, not watching. Solving for the equilibrium field is how it is
- * *found*, not something the room does over time. A smooth fade would quietly
- * claim the room is evolving, and it isn't — the model is stationary.
+ * The picture jumps from iterate to iterate. Each application of the map is also
+ * one more scattering event, but what the slide is doing is iterating, not
+ * watching. Solving for the equilibrium field is how it is *found*, not
+ * something the room does over time. A smooth fade would quietly claim the room
+ * is evolving, and it isn't — the model is stationary.
+ *
+ * ## The composition, written out
+ *
+ * Under each room is the expression that produced it, not a count:
+ *
+ *     A                B
+ *     E + TA           E + TB
+ *     E + T(E + TA)    E + T(E + TB)
+ *     ...
+ *
+ * The two columns differ in one letter and nowhere else, which is the whole
+ * argument on screen at once: the same operator is applied to both, so whatever
+ * survives of A and B is buried under an ever-deeper stack of identical E's and
+ * T's. A count would have said how many times; this says what was done.
+ *
+ * It grows by seven characters a step, so after five levels the line stops being
+ * readable projected and a single count takes over in the middle. By then the
+ * expression has done its work — the stack has been seen to build, and all that
+ * is left to report is how tall it is. So the demo still runs out to twelve.
  */
 
 import * as THREE from 'three';
@@ -67,7 +86,7 @@ const ui = createUI(stage);
 const RX = 1.8;
 const RY = 1.55;
 const WALL = 0.14;
-const DISC = { x: -0.551, y: -0.6, r: 0.5 };
+const DISC = { x: -0.551, y: -1.049, r: 0.5 };
 
 /** Patches per wall, and around the object. */
 const NW = 36;
@@ -438,7 +457,9 @@ const FRAG = /* glsl */ `
 
   /** Darken the last sliver of a patch, so the tiling is visible. */
   float seam(float f) {
-    return 0.45 + 0.55 * smoothstep(0.0, 0.09, min(f, 1.0 - f));
+    // Near-black and wide: the gaps between patches are the point, so they are
+    // drawn as gaps rather than as a hint of shading.
+    return 0.12 + 0.88 * smoothstep(0.0, 0.15, min(f, 1.0 - f));
   }
   float seamDisc(vec2 n) {
     float a = atan(n.y, n.x) + 3.14159265;
@@ -564,13 +585,13 @@ stage.add(screen);
 // ---------------------------------------------------------------------------
 
 stage.add(
-  label('started black', {
+  label('A: started black', {
     size: 0.19,
     color: C.bone,
     anchorX: 'center',
     position: [PANEL_X[0], PANEL_Y + RY + 0.26, 0],
   }),
-  label('started with nonsense', {
+  label('B: started with nonsense', {
     size: 0.19,
     color: C.bone,
     anchorX: 'center',
@@ -581,13 +602,80 @@ stage.add(
 /** How many iterations the loop steps through. */
 const MAX_N = 12;
 
-const iterLabel = label('', {
+/**
+ * How deep the nesting is written out before the label gives up and counts.
+ *
+ * Five is where a projected line stops being readable — every iteration adds
+ * `E + T(` and a closing paren, so the string grows by seven characters a step
+ * and the type has to shrink to match. Past that the expression has made its
+ * point anyway: the reader has seen the stack build, and what matters from then
+ * on is only how tall it is.
+ */
+const WRITTEN_OUT = 5;
+
+/**
+ * The expression that produced the n-th iterate, from a seed.
+ *
+ *   n = 0   A
+ *   n = 1   E + TA
+ *   n = 2   E + T(E + TA)
+ */
+function composition(seed: string, n: number): string {
+  if (n <= 0) return seed;
+  let out = `E + T${seed}`;
+  for (let k = 1; k < n; k++) out = `E + T(${out})`;
+  return out;
+}
+
+/**
+ * Rough advances in ems for the handful of glyphs these strings use, so the type
+ * can be sized to fit before troika has laid it out. Measuring properly would
+ * mean waiting a frame for the sync, and a frame late is exactly what the
+ * exporter cannot have.
+ */
+const ADV: Record<string, number> = { E: 0.61, T: 0.61, A: 0.72, B: 0.67, '+': 0.56, '(': 0.33, ')': 0.33, ' ': 0.25 };
+const emWidth = (str: string) => [...str].reduce((w, c) => w + (ADV[c] ?? 0.55), 0);
+
+/**
+ * How wide a composition may be, and how big its type may get.
+ *
+ * The panels are 4.2 apart, so 3.4 leaves a clear channel between the two
+ * expressions at full depth — they are meant to be read as two columns, and at
+ * 3.9 the deepest pair very nearly touched in the middle.
+ */
+const TEXT_W = 3.4;
+const TEXT_MAX = 0.26;
+
+const TEXT_Y = PANEL_Y - RY - 0.8;
+
+/** Past `WRITTEN_OUT` the two expressions are identical but for one letter and
+ * both illegible, so one count in the middle replaces the pair. */
+const countLabel = label('', {
   size: 0.3,
   color: C.ochre,
   anchorX: 'center',
-  position: [(PANEL_X[0] + PANEL_X[1]) / 2, PANEL_Y - RY - 0.75, 0],
+  anchorY: 'middle',
+  position: [(PANEL_X[0] + PANEL_X[1]) / 2, TEXT_Y, 0],
 });
-stage.add(iterLabel);
+stage.add(countLabel);
+
+const compLabels = PANEL_X.map((x) => {
+  const l = label('', {
+    size: TEXT_MAX,
+    color: C.ochre,
+    anchorX: 'center',
+    anchorY: 'middle',
+    position: [x, TEXT_Y, 0],
+  });
+  stage.add(l);
+  return l;
+});
+
+/** Set a composition and size it so it always fits its panel. */
+function setComposition(l: ReturnType<typeof label>, str: string): void {
+  setText(l, str);
+  l.fontSize = Math.min(TEXT_MAX, TEXT_W / emWidth(str));
+}
 
 // ---------------------------------------------------------------------------
 // Controls
@@ -595,14 +683,16 @@ stage.add(iterLabel);
 
 const params = {
   run: true,
-  iteration: 6,
+  iteration: 3,
+  depth: MAX_N,
   albedo: 0.72,
   emission: 1.6,
   exposure: 1.1,
   resolution: 0.45,
 };
 ui.params.add(params, 'run').name('step through iterations');
-ui.params.add(params, 'iteration', 0, MAX_N, 1).name('iteration');
+ui.params.add(params, 'iteration', 0, 12, 1).name('iteration (when held)');
+ui.params.add(params, 'depth', 1, 12, 1).name('how many iterations');
 ui.params.add(params, 'albedo', 0.2, 1, 0.01).name('albedo (= c)');
 ui.params.add(params, 'emission', 0, 4, 0.05).name('emission');
 ui.params.add(params, 'exposure', 0.2, 3, 0.05).name('exposure');
@@ -620,7 +710,8 @@ stage.frame((t) => {
   const u = stage.duration > 0 ? (t % stage.duration) / stage.duration : 0;
 
   // Discrete steps, held: the counter is an iteration index, not a clock.
-  const n = params.run ? Math.min(MAX_N, Math.floor(u * (MAX_N + 1))) : Math.round(params.iteration);
+  const top = Math.round(params.depth);
+  const n = params.run ? Math.min(top, Math.floor(u * (top + 1))) : Math.round(params.iteration);
 
   const key = `${n}|${params.albedo}|${params.emission}`;
   if (key !== lastKey) {
@@ -642,7 +733,17 @@ stage.frame((t) => {
     }
     radianceTex.needsUpdate = true;
 
-    setText(iterLabel, n === 1 ? '1 iteration' : `${n} iterations`);
+    // The composition that produced each picture, rather than a count of them —
+    // until the nesting outgrows the line, at which point a count takes over.
+    const spelled = n <= WRITTEN_OUT;
+    countLabel.visible = !spelled;
+    for (const l of compLabels) l.visible = spelled;
+    if (spelled) {
+      setComposition(compLabels[0], composition('A', n));
+      setComposition(compLabels[1], composition('B', n));
+    } else {
+      setText(countLabel, `${n} iterations`);
+    }
   }
 
   fieldMat.uniforms.uExposure.value = params.exposure;

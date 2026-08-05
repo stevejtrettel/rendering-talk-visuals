@@ -24,6 +24,7 @@ import { label, setText, fixed } from '@/text';
 import { FIELD_HALF, FIELD_VOLUME, bumps2d } from '@/functions';
 import {
   Z,
+  HOLD,
   START_ANGLE,
   autoOrbit,
   barMaterial,
@@ -124,8 +125,12 @@ const dummy = new THREE.Object3D();
 const SPIKE_R = 0.012;
 
 stage.frame((t) => {
-  const u = stage.duration > 0 ? (t % stage.duration) / stage.duration : 0;
-  if (params.autoOrbit) autoOrbit(stage, u, START_ANGLE);
+  // Two clocks: the raw phase, which the orbit rides so it closes its circle
+  // over the loop, and the ramp, which finishes HOLD seconds early so the
+  // final sample count is on screen long enough to read before the restart.
+  const phase = stage.progress(t);
+  const u = stage.progress(t, HOLD);
+  if (params.autoOrbit) autoOrbit(stage, phase, START_ANGLE);
 
   let n = Math.round(params.N);
   if (params.mode === 'stream') {

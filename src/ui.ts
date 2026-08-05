@@ -60,6 +60,12 @@ export function createUI(stage: Stage, opts: UIOptions = {}): DemoUI {
 
   const gui = new GUI({ title: name });
 
+  // A frozen-time URL (?t=) is only ever used to inspect or screenshot a
+  // particular instant, so it starts with the panel out of the way — otherwise
+  // every check shot has a control panel sitting over the right of the frame.
+  let hidden = new URLSearchParams(location.search).has('t');
+  if (hidden) gui.domElement.style.display = 'none';
+
   // --- toast ---------------------------------------------------------------
   const toastEl = document.createElement('div');
   Object.assign(toastEl.style, {
@@ -149,10 +155,10 @@ export function createUI(stage: Stage, opts: UIOptions = {}): DemoUI {
     zIndex: '150',
   });
   document.body.appendChild(hint);
+  if (hidden) hint.style.display = 'none';
   setTimeout(() => (hint.style.opacity = '0'), 4000);
 
   // --- keys ----------------------------------------------------------------
-  let hidden = false;
   window.addEventListener('keydown', (e) => {
     if (e.target instanceof HTMLInputElement) return;
     const k = e.key.toLowerCase();

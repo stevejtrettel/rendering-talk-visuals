@@ -39,6 +39,7 @@ import * as THREE from 'three';
 import { createStage, createUI, C, flat, css } from '@';
 import { polyline, setPolyline, type Pt } from '@/lines';
 import { label, setText, fixed } from '@/text';
+import { room } from '@/scene2d';
 
 const ORTHO_H = 3;
 const HALF_W = (ORTHO_H * 16) / 9;
@@ -59,11 +60,14 @@ const ui = createUI(stage);
 // The room, in room coordinates. Each panel is this room, offset.
 // ---------------------------------------------------------------------------
 
-const RX = 1.35; // half width
-const RY = 1.2; // half height
-const WALL = 0.16; // drawn thickness of the walls — thick enough to carry shading
+// The continuous version of the shared room, at the scale that fits three
+// across the frame. Same shape as the discretised demos, smooth object.
+const ROOM = room(1.35);
+const RX = ROOM.rx; // half width
+const RY = ROOM.ry; // half height
+const WALL = ROOM.wall; // drawn thickness of the walls
 
-const DISC = { x: -0.42, y: -0.5, r: 0.4 };
+const DISC = { x: ROOM.disc.x, y: ROOM.disc.y, r: ROOM.disc.r };
 const LAMP_R = 0.1;
 // Placed where lamp A's shadow sweeps over it for about half the orbit, while
 // lamp B always sees it: the interesting case, where one contribution nearly

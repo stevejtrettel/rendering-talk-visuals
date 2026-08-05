@@ -17,6 +17,12 @@ export interface DemoInfo {
 
 /** Optional metadata, keyed by folder name. */
 export const INFO: Record<string, DemoInfo> = {
+  'flatten-room': {
+    title: 'From the Cornell Box to the Room',
+    blurb:
+      'A 3D Cornell box, and a copy of it that slides clear, turns to face you and has its depth squeezed out — leaving the 2D room the rest of the deck is set in. Both are built from the same room(), so the flat one is the box\'s cross-section rather than a lookalike.',
+    section: 'Modeling Light',
+  },
   'radiance-2d': {
     title: 'Radiance',
     blurb: 'A 2D room, the circle of directions at a point, and the spectrum carried by the ray in each direction.',
@@ -42,10 +48,54 @@ export const INFO: Record<string, DemoInfo> = {
     blurb: 'E + TE + T-squared E + ... one term at a time, with the sum beside it. The terms are sorted by bounce count, and this is where paths come from.',
     section: 'Solving for the Light Field',
   },
+  'path-set': {
+    title: 'The Set of Paths Varies',
+    blurb: 'The finished bidirectional web, with p sliding along the floor. Connections snap in and out as the visibility region is crossed.',
+    section: 'Solving for the Light Field',
+  },
+  bidirectional: {
+    title: 'Starting at Both Ends',
+    blurb: 'Two chains grow, one from p and one from the lamp, then every pairing is tried. Blocked connections go black; clear ones flare and settle into a web.',
+    section: 'Solving for the Light Field',
+  },
+  caustics: {
+    title: 'Caustics are Critical Values',
+    blurb: 'A moving water surface refracts a parallel beam onto the floor, with the light density measured underneath. The bright lines are exactly where the ray map has a fold.',
+    section: 'Solving for the Light Field',
+  },
+  'fermat-critical': {
+    title: 'Reflection is a Derivative',
+    blurb: 'Fix the ends and slide the vertex along the surface. Optical path length becomes a function of one number, and wherever its graph goes flat the angles come out equal — reflection, and Snell, with no law assumed.',
+    section: 'Solving for the Light Field',
+  },
   'path-space': {
     title: 'The Space of Paths',
     blurb: 'The same series drawn as paths: length k on the left, every path so far on the right, sweeping to fill in the continuum.',
     section: 'Solving for the Light Field',
+  },
+  // One continuous shot in three parts, so they share a section and sort into
+  // playing order. They straddle the deck — the first is Part I's Objects slide,
+  // the last is Part VII's Storing a Light Field — and filing them apart put the
+  // opening demo on the other side of the index page from its own sequel.
+  'state-space': {
+    title: 'The Space of States — 1. Two Tori',
+    blurb: 'Part I. The circle of directions at every point of the boundary stands up out of the plane and sweeps out two tori: the state space the light field lives on.',
+    section: 'The State Space',
+  },
+  'state-space-discrete': {
+    title: 'The Space of States — 2. Chopped Into Cells',
+    blurb: 'A second sweep cuts both tori into cells: sixteen facets and thirty-six patches per wall, crossed with twelve directions. Chop up the surfaces, chop up the sphere of directions at each point.',
+    section: 'The State Space',
+  },
+  'state-space-room': {
+    title: 'The Space of States — 4. The Array Is the Room',
+    blurb: 'The five arrays on the left, the room on the right, and the room computed from nothing but those arrays. A cursor reads the store column by column and the patch each column stands for lights up with it.',
+    section: 'The State Space',
+  },
+  'state-space-stored': {
+    title: 'The Space of States — 3. Storing a Light Field',
+    blurb: 'Part VII. The tori split along their undersides, unroll and flatten into the five arrays a renderer holds — one per wall plus the object — then fill with a solved field. The bottom half of each is flat because the materials are Lambertian; the top half is a panorama of the room.',
+    section: 'The State Space',
   },
   'linear-scene': {
     title: 'The Scene is a Linear Map',
@@ -91,6 +141,11 @@ export const INFO: Record<string, DemoInfo> = {
     title: 'Radiance on the Boundary',
     blurb: 'The same room, with p walking the scene boundary and a vector sweeping the hemisphere that points into it.',
     section: 'Modeling Light',
+  },
+  'roulette-rooms': {
+    title: 'The Same Walks, Scored Twice',
+    blurb: 'Two rooms holding the identical set of paths, at identical cost. On the left only the vertex a walk finished on may count; on the right every vertex counts. The right room finds the lamp several times as often, for nothing.',
+    section: 'Integration',
   },
   'curse-of-dimension': {
     title: 'Riemann Sums, and Dimension',

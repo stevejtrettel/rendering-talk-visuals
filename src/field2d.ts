@@ -20,6 +20,14 @@ export const Z = 1.35;
 export const DURATION = 14;
 
 /**
+ * Seconds at the end of the loop spent parked on the finished estimate.
+ * Shared, so the two demos reach their final N together and hold together.
+ * The camera orbit runs off the raw loop phase, not this one — it keeps
+ * turning through the hold and still closes its circle at the loop point.
+ */
+export const HOLD = 2.6;
+
+/**
  * Standard three-quarter view. The distance is set so the whole 6×6 plate and
  * the tallest bump fit inside a 38° vertical field — closer than this and the
  * near corner of the plate falls out of frame.

@@ -125,6 +125,16 @@ export class Stage {
     // small preview window, a maximised one, and the rendered movie.
     setLineResolution(EXPORT_W, EXPORT_H);
 
+    // ?t=<seconds> freezes the demo at one instant. Headless screenshots cannot
+    // reliably advance the animation on their own, so without this, checking
+    // what a demo looks like at t = 6 means editing the source and putting it
+    // back afterwards.
+    const frozen = new URLSearchParams(location.search).get('t');
+    if (frozen !== null && Number.isFinite(Number(frozen))) {
+      this.t = Number(frozen);
+      this.speed = 0;
+    }
+
     this.resize();
     // Handy from the devtools console: __stage.t = 3, __stage.camera.position, …
     (window as any).__stage = this;
@@ -167,6 +177,24 @@ export class Stage {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(w, h, false);
     // Aspect is locked at 16:9, so the camera never needs adjusting on resize.
+  }
+
+  /**
+   * Loop progress in [0, 1], from the `t` handed to a frame callback.
+   *
+   * `hold` is a stretch at the end of the loop, in seconds, spent parked at 1.
+   * A demo that ramps to a final state and cuts straight back shows that state
+   * for a single frame — and in an export never quite reaches it, since the
+   * last captured frame sits at `duration - 1/fps`. Finishing the ramp early
+   * and holding gives the eye time on the result, and makes the final state
+   * exactly what the last exported frame contains.
+   *
+   * Pass no `hold` for the plain cyclic phase (what a returning motion wants).
+   */
+  progress(t: number, hold = 0): number {
+    if (this.duration <= 0) return 0;
+    const span = Math.max(this.duration - hold, 1e-6);
+    return Math.min(1, (t % this.duration) / span);
   }
 
   /** Advance the demo to an exact time and redraw. Used by the exporter. */

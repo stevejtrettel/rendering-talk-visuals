@@ -34,7 +34,14 @@
 export const RATIO = 0.861;
 /** Object centre, as fractions of the half-width and half-height. */
 export const OBJ_X = -0.306;
-export const OBJ_Y = -0.387;
+/**
+ * Chosen so the object rests *on* the floor at every scale: with the radius a
+ * fixed fraction of the half-width, -1 + r/ry puts its lowest point exactly on
+ * the floor line. `radiance-boundary` walks p from the floor onto the object
+ * where the two pieces of the boundary touch, and a floating object breaks that
+ * walk into two disconnected circuits.
+ */
+export const OBJ_Y = -0.677;
 /** Object radius — the circle's radius, and the polygon's circumradius. */
 export const OBJ_R = 0.278;
 /** Emitting strip in the ceiling, as a fraction of half-width. */
@@ -295,7 +302,9 @@ export const POLYGON_GLSL = /* glsl */ `
 /** GLSL seams, so a tiled boundary reads as tiled. */
 export const SEAM_GLSL = /* glsl */ `
   float seam(float f) {
-    return 0.45 + 0.55 * smoothstep(0.0, 0.09, min(f, 1.0 - f));
+    // Near-black and wide: the gaps between patches are the point, so they are
+    // drawn as gaps rather than as a hint of shading.
+    return 0.12 + 0.88 * smoothstep(0.0, 0.15, min(f, 1.0 - f));
   }
   float seamDisc(vec2 n) {
     float a = atan(n.y, n.x);

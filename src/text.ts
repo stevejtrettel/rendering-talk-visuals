@@ -59,10 +59,25 @@ export function label(text: string, opts: LabelOptions = {}): Text {
   t.anchorY = anchorY;
   t.lineHeight = lineHeight;
   t.letterSpacing = letterSpacing;
-  t.material.transparent = opacity < 1;
+  // Always transparent, even at full opacity. troika's shader antialiases a
+  // glyph by computing a coverage alpha across the edge and discarding only
+  // the fully-transparent fragments — so with blending off, every partially
+  // covered edge pixel is written at *full* opacity and the antialiasing is
+  // silently thrown away. The result is binary, stair-stepped glyphs. troika
+  // forces `transparent` on its own material for exactly this reason; setting
+  // it back to false undoes the whole point of an SDF.
+  //
+  // It hid for a while because the preview is supersampled (devicePixelRatio
+  // up to 2) while an export is a flat 1920×1080, so the hard edges averaged
+  // away on screen and only showed up in the file.
+  t.material.transparent = true;
   t.material.opacity = opacity;
   // Labels are overlay-ish: they should not be hidden by geometry behind them.
   t.material.depthTest = false;
+  // ...and having no depth test, they have no business writing depth either —
+  // in the transparent pass an invisible glyph quad would otherwise punch a
+  // hole through anything drawn after it.
+  t.material.depthWrite = false;
   t.renderOrder = 10;
   t.position.set(...position);
   trackedSync(t);

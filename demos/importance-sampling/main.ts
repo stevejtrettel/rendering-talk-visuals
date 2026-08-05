@@ -44,6 +44,8 @@ const stage = createStage({
   controls: false,
 });
 stage.duration = 12;
+/** Seconds at the end of the loop spent parked on the converged panels. */
+const HOLD = 2.4;
 
 const ui = createUI(stage);
 
@@ -322,7 +324,11 @@ stage.frame((t) => {
 
   if (params.mode === 'stream') {
     // Geometric ramp: the early samples are where the estimates lurch about.
-    n = Math.round(Math.exp(Math.log(Math.max(params.N, 1)) * u));
+    // It finishes HOLD seconds early and parks, so the two converged panels can
+    // actually be compared before the loop restarts. Reroll keeps the raw phase
+    // — each roll already gets a full slot, and a held phase would run the
+    // seed one past the end.
+    n = Math.round(Math.exp(Math.log(Math.max(params.N, 1)) * stage.progress(t, HOLD)));
   } else if (params.mode === 'reroll') {
     // Hold N and step the seed, so each roll is an independent experiment.
     // Quantised rather than continuous, so each one is legible before it goes.

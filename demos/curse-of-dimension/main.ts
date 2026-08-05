@@ -14,6 +14,22 @@
  * "No dimension in the exponent" stops being a sentence and becomes the two
  * shapes on this chart.
  *
+ * ## The budget is the control
+ *
+ * The one slider that matters is the budget: how many evaluations either method
+ * is allowed. Everything is recomputed from it, and it is what makes the
+ * argument arguable rather than asserted — wind it down and watch the grids
+ * disappear one dimension at a time. At 65 536 evaluations, sixteen dimensions
+ * affords exactly one grid, the coarsest one there is. Below that it affords
+ * none at all, and the rust curve for d = 16 simply is not there while the blue
+ * one carries on unbothered. That state is the slide.
+ *
+ * Cost is held roughly constant instead of the run count: the replicate count
+ * moves inversely with the budget, so a small budget buys smoother sampled
+ * curves and a large one buys noisier ones. That trade is real and is shown in
+ * the readout rather than hidden — averaging fewer runs is exactly what you do
+ * when each run costs more.
+ *
  * ## The integrand
  *
  * A product of one smooth bump per axis, each normalised to average 1 over its
@@ -44,22 +60,24 @@
  * `FIELD_VOLUME`. The cost on the x-axis is the honest m^d; only the arithmetic
  * is short-cut. Nothing here is a fitted curve or a drawn slope.
  *
- * This is what makes the dots matter. In eight dimensions only three grids fit
- * inside the budget, and in sixteen there is exactly one — a single dot, at
- * 2^16 evaluations, for the coarsest grid that exists. That dot is the slide.
- *
  * ## The Monte Carlo values are simulated
  *
  * No shortcut is available or wanted: the curves are what a sampler actually
- * did. Each is the RMS error over REPLICATES independent runs, which is the
- * quantity the talk names — √(Var/N). The wobble is real and is left in; it is
- * an estimate of a standard deviation from six runs, and smoothing it would be
- * drawing rather than measuring.
+ * did. Each is the RMS error over the replicate runs, which is the quantity the
+ * talk names — √(Var/N). The wobble is real and is left in; an RMS from R runs
+ * is itself uncertain by about 1/√(2R), and smoothing it would be drawing
+ * rather than measuring.
  *
- * One stream of uniforms is drawn once from a fixed seed. Dimension d reads it
- * d numbers at a time — the same random numbers cut into different-length
- * blocks, which is exactly what a longer path does to the same stream. Nothing
- * calls Math.random(), so every exported frame is reproducible.
+ * Nothing calls Math.random(): every run is a seeded stream, keyed by dimension
+ * and replicate, so the chart is identical on every reload and every exported
+ * frame.
+ *
+ * ## Aspect
+ *
+ * At the default budget the box is laid out so a decade across equals a decade
+ * up, and the slopes can be read off with a ruler. Change the budget and the
+ * horizontal decade stretches or squashes to keep the box put; the fan and the
+ * bundle survive it, but the printed −1/2 guide is the thing to read against.
  */
 
 import * as THREE from 'three';
@@ -76,16 +94,11 @@ import { A, B, simpson } from '@/functions';
 /** The dimensions we run. 16 is there for the single-dot moment. */
 const DIMS = [1, 2, 4, 8, 16];
 
-/** Cost ceiling, in evaluations of the integrand. 2^16, so d = 16 just fits. */
-const NMAX = 65536;
-
 /**
- * Independent runs the Monte Carlo error is an RMS over. An RMS from R runs is
- * itself uncertain by about 1/√(2R), so this is the knob that decides how much
- * the sampled curves wobble — and it is the whole build cost, since every extra
- * run is another NMAX samples in every dimension.
+ * replicates × budget, held fixed, so a rebuild costs about the same however
+ * the budget is set. The default budget lands on twelve runs.
  */
-const REPLICATES = 12;
+const TARGET_WORK = 12 * 65536;
 
 /**
  * One smooth bump, off-centre so nothing lines up with a cell boundary and no
@@ -99,10 +112,6 @@ const MEAN = simpson(bump, A, B) / (B - A);
 /** One factor of the integrand: average 1 over [A, B], by construction. */
 const g = (x: number): number => bump(x) / MEAN;
 
-// ---------------------------------------------------------------------------
-// Riemann
-// ---------------------------------------------------------------------------
-
 /** Midpoint average of g over m cells. The 1D building block. */
 function midpointMean(m: number): number {
   let s = 0;
@@ -111,8 +120,8 @@ function midpointMean(m: number): number {
 }
 
 /** Grid resolutions worth plotting for dimension d, log-spaced when there are many. */
-function resolutions(d: number): number[] {
-  const mMax = Math.floor(Math.pow(NMAX, 1 / d) + 1e-9);
+function resolutions(d: number, budget: number): number[] {
+  const mMax = Math.floor(Math.pow(budget, 1 / d) + 1e-9);
   if (mMax < 2) return [];
   if (mMax <= 40) return Array.from({ length: mMax - 1 }, (_, i) => i + 2);
   const out: number[] = [];
@@ -124,39 +133,34 @@ function resolutions(d: number): number[] {
 }
 
 /** [log10 cost, log10 relative error] for the midpoint rule in d dimensions. */
-function riemannCurve(d: number): [number, number][] {
-  return resolutions(d).map((m) => {
+function riemannCurve(d: number, budget: number): [number, number][] {
+  return resolutions(d, budget).map((m) => {
     const est = Math.pow(midpointMean(m), d);
     return [d * Math.log10(m), Math.log10(Math.abs(est - 1))] as [number, number];
   });
 }
 
-// ---------------------------------------------------------------------------
-// Monte Carlo
-// ---------------------------------------------------------------------------
-
 /** Sample counts the error is recorded at — every half-power of two. */
-const LADDER = (() => {
+function ladder(budget: number): number[] {
   const out: number[] = [];
   // Starts at sixteen samples: below that the "error" is a handful of draws'
   // distance from the answer, a fact about a few numbers rather than a rate.
-  for (let k = 8; k <= 2 * Math.log2(NMAX); k++) {
+  for (let k = 8; k <= 2 * Math.log2(budget) + 1e-9; k++) {
     const n = Math.round(Math.pow(2, k / 2));
-    if (out[out.length - 1] !== n) out.push(n);
+    if (n <= budget && out[out.length - 1] !== n) out.push(n);
   }
   return out;
-})();
+}
 
 /** [log10 cost, log10 RMS relative error] for uniform sampling in d dimensions. */
-function monteCarloCurve(d: number): [number, number][] {
-  const sq = new Float64Array(LADDER.length);
-  for (let r = 0; r < REPLICATES; r++) {
-    // A fresh cut of the same stream per (dimension, replicate).
+function monteCarloCurve(d: number, steps: number[], replicates: number): [number, number][] {
+  const sq = new Float64Array(steps.length);
+  for (let r = 0; r < replicates; r++) {
     const rng = mulberry32(0x9e3779b9 ^ (d * 977 + r));
     let acc = 0;
     let n = 0;
-    for (let li = 0; li < LADDER.length; li++) {
-      while (n < LADDER[li]) {
+    for (let li = 0; li < steps.length; li++) {
+      while (n < steps[li]) {
         let p = 1;
         for (let j = 0; j < d; j++) p *= g(A + (B - A) * rng());
         acc += p;
@@ -166,18 +170,13 @@ function monteCarloCurve(d: number): [number, number][] {
       sq[li] += err * err;
     }
   }
-  return LADDER.map(
-    (n, i) => [Math.log10(n), Math.log10(Math.sqrt(sq[i] / REPLICATES))] as [number, number],
+  return steps.map(
+    (n, i) => [Math.log10(n), Math.log10(Math.sqrt(sq[i] / replicates))] as [number, number],
   );
 }
 
-const buildStart = performance.now();
-const RIEMANN = DIMS.map(riemannCurve);
-const MONTE = DIMS.map(monteCarloCurve);
-const buildMs = performance.now() - buildStart;
-
 // ---------------------------------------------------------------------------
-// The plot box
+// The plot box — fixed, so changing the budget never moves the furniture
 // ---------------------------------------------------------------------------
 
 const stage = createStage({
@@ -191,29 +190,25 @@ const stage = createStage({
 
 const ui = createUI(stage);
 
-/** Axis ranges, as log10. x is cost, y is relative error. */
 const X0 = 0;
-const X1 = Math.log10(NMAX);
 const Y0 = -4;
 const Y1 = 0;
 
-/**
- * World units per decade — the same in both directions, so a slope of −1/2 is
- * drawn at a true −1/2 and the fan can be read off the picture with a ruler.
- */
-const DEC = 0.95;
-const DECX = DEC;
-const DECY = DEC;
-
-/** Bottom-left corner of the box, in world units. */
 const BOX_X = -4.1;
 const BOX_Y = -1.75;
+const BOX_W = 4.58;
+const BOX_H = 3.8;
+const BOX_R = BOX_X + BOX_W;
+const BOX_T = BOX_Y + BOX_H;
+
+const DECY = BOX_H / (Y1 - Y0);
+
+/** Set by every rebuild: the right-hand end of the cost axis, and its scale. */
+let X1 = 1;
+let DECX = 1;
 
 const px = (lx: number): number => BOX_X + (lx - X0) * DECX;
 const py = (ly: number): number => BOX_Y + (ly - Y0) * DECY;
-
-const BOX_R = px(X1);
-const BOX_T = py(Y1);
 
 /**
  * Keep the leading run of a curve that lies inside the box. Only the
@@ -228,7 +223,6 @@ function clip(pts: [number, number][]): [number, number][] {
       continue;
     }
     if (out.length > 0) {
-      // Crossed a horizontal edge — walk to it and stop.
       const [xp, yp] = out[out.length - 1];
       const edge = y < Y0 ? Y0 : Y1;
       const t = (edge - yp) / (y - yp);
@@ -239,40 +233,26 @@ function clip(pts: [number, number][]): [number, number][] {
   return out;
 }
 
-const rCurves = RIEMANN.map(clip);
-const mCurves = MONTE.map(clip);
-
 // ---------------------------------------------------------------------------
-// Scenery: box, decade grid, ticks
+// Static furniture
 // ---------------------------------------------------------------------------
 
-const grid = new THREE.Group();
-grid.position.z = -0.2;
-for (let e = Math.ceil(X0); e <= X1; e++) {
-  grid.add(polyline([[px(e), py(Y0), 0], [px(e), py(Y1), 0]], { color: C.slateDeep, width: 1.2 }));
-}
+const yGrid = new THREE.Group();
+yGrid.position.z = -0.2;
 for (let e = Y0; e <= Y1; e++) {
-  grid.add(polyline([[px(X0), py(e), 0], [px(X1), py(e), 0]], { color: C.slateDeep, width: 1.2 }));
+  yGrid.add(polyline([[BOX_X, py(e), 0], [BOX_R, py(e), 0]], { color: C.slateDeep, width: 1.2 }));
 }
-stage.add(grid);
+stage.add(yGrid);
 
 stage.add(
-  polyline(
-    [[px(X0), py(Y1), 0], [px(X0), py(Y0), 0], [px(X1), py(Y0), 0]],
-    { color: C.slate, width: 2.4 },
-  ),
+  polyline([[BOX_X, BOX_T, 0], [BOX_X, BOX_Y, 0], [BOX_R, BOX_Y, 0]], {
+    color: C.slate,
+    width: 2.4,
+  }),
 );
 
-// Cost ticks. Spelled out rather than as powers, which reads better projected.
-const COST_TICK = ['1', '10', '100', '1 000', '10 000'];
-COST_TICK.forEach((text, e) => {
-  stage.add(
-    label(text, { size: 0.19, color: C.ash, anchorX: 'center', position: [px(e), py(Y0) - 0.34, 0] }),
-  );
-});
-
 // Error ticks, as percentages — "1% error" lands with an audience in a way that
-// "10 to the minus two" does not.
+// "ten to the minus two" does not.
 const ERR_TICK: Record<number, string> = {
   0: '100%',
   [-1]: '10%',
@@ -287,7 +267,7 @@ for (let e = Y0; e <= Y1; e++) {
       color: C.ash,
       anchorX: 'right',
       anchorY: 'middle',
-      position: [px(X0) - 0.16, py(e), 0],
+      position: [BOX_X - 0.16, py(e), 0],
     }),
   );
 }
@@ -297,7 +277,7 @@ stage.add(
     size: 0.22,
     color: C.bone,
     anchorX: 'center',
-    position: [(px(X0) + px(X1)) / 2, py(Y0) - 0.82, 0],
+    position: [(BOX_X + BOX_R) / 2, BOX_Y - 0.82, 0],
   }),
 );
 
@@ -305,126 +285,13 @@ const yTitle = label('relative error', {
   size: 0.22,
   color: C.bone,
   anchorX: 'center',
-  position: [px(X0) - 1.02, (py(Y0) + py(Y1)) / 2, 0],
+  position: [BOX_X - 1.02, (BOX_Y + BOX_T) / 2, 0],
 });
 yTitle.rotation.z = Math.PI / 2;
 stage.add(yTitle);
 
-// ---------------------------------------------------------------------------
-// The guide: what slope −1/2 looks like on this box
-// ---------------------------------------------------------------------------
-
-/** Anchored where the sampled curves live, so the bundle can be read against it. */
-const GUIDE_Y0 = -0.3;
-const guide = polyline(
-  [[px(X0), py(GUIDE_Y0), 0], [px(X1), py(GUIDE_Y0 - X1 / 2), 0]],
-  { color: C.slateDeep, width: 2, dashed: true, dashSize: 0.13, gapSize: 0.09 },
-);
-guide.position.z = -0.1;
-// Parked under the right end, in the wedge the data leaves empty.
-const guideLabel = label('slope -1/2', {
-  size: 0.19,
-  color: C.slate,
-  anchorX: 'right',
-  position: [px(X1) - 0.05, py(GUIDE_Y0 - X1 / 2 - 0.45), 0],
-});
-stage.add(guide, guideLabel);
-
-// ---------------------------------------------------------------------------
-// The curves
-// ---------------------------------------------------------------------------
-
 const RIEMANN_COLOR = C.rust;
 const MONTE_COLOR = C.blue;
-
-/** Points clamped to a reveal position, keeping the vertex count fixed. */
-function revealed(pts: [number, number][], xr: number, z: number): Pt[] {
-  const out: Pt[] = [];
-  let last: [number, number] = pts[0];
-  for (let i = 0; i < pts.length; i++) {
-    const [x, y] = pts[i];
-    if (x <= xr) {
-      last = [x, y];
-      out.push([px(x), py(y), z]);
-    } else {
-      if (i > 0 && last[0] <= xr && pts[i - 1][0] <= xr) {
-        // Interpolate up to the sweep line, then hold there.
-        const [xp, yp] = pts[i - 1];
-        const t = (xr - xp) / (x - xp);
-        last = [xr, yp + (y - yp) * t];
-      }
-      out.push([px(last[0]), py(last[1]), z]);
-    }
-  }
-  return out;
-}
-
-interface Series {
-  line: ReturnType<typeof polyline>;
-  pts: [number, number][];
-}
-
-function makeSeries(pts: [number, number][], color: number, width: number, z: number): Series {
-  // Line2 needs two vertices; d = 16 has a single grid, carried by its dot.
-  const seed = pts.length >= 2 ? pts : [pts[0] ?? [X0, Y0], pts[0] ?? [X0, Y0]];
-  const line = polyline(revealed(seed, X1, z), { color, width });
-  stage.add(line);
-  return { line, pts: seed };
-}
-
-const rSeries = rCurves.map((pts) => makeSeries(pts, RIEMANN_COLOR, 4.5, 0.1));
-// Thinner than the grid curves: five sampled runs overlap, and the point is
-// that they are one line up to noise rather than five things to tell apart.
-const mSeries = mCurves.map((pts) => makeSeries(pts, MONTE_COLOR, 2.8, 0.05));
-
-/** A dot per affordable grid — the only resolutions that fit in the budget. */
-const dotGeom = new THREE.CircleGeometry(0.055, 20);
-const dots = rCurves.map((pts) => {
-  const mesh = new THREE.InstancedMesh(dotGeom, flat(RIEMANN_COLOR), Math.max(1, pts.length));
-  mesh.frustumCulled = false;
-  mesh.position.z = 0.15;
-  mesh.count = 0;
-  const m = new THREE.Matrix4();
-  pts.forEach((p, i) => mesh.setMatrixAt(i, m.makeTranslation(px(p[0]), py(p[1]), 0)));
-  mesh.instanceMatrix.needsUpdate = true;
-  stage.add(mesh);
-  return mesh;
-});
-
-/**
- * Names the dimension where its grid curve *ends*, which is the one place the
- * five are reliably far apart: the two fast ones run off the bottom of the box
- * at very different costs, and the three slow ones stack up the right-hand edge
- * more than a decade apart. At the start they are all crowded into one corner.
- */
-const dimEnd = rCurves.map((pts) => pts[pts.length - 1] ?? [X1, Y1]);
-
-/** The cheapest point either method has in this dimension — where a sweep begins. */
-const SWEEP_FROM = DIMS.map((_, i) =>
-  Math.min(rCurves[i][0]?.[0] ?? X1, mCurves[i][0]?.[0] ?? X1),
-);
-
-const dimLabels = DIMS.map((d, i) => {
-  const [ex, ey] = dimEnd[i];
-  const onRightEdge = ex > X1 - 1e-6;
-  // The ones that run to the right-hand edge are named just outside the box —
-  // inside, they would land on top of the Monte Carlo bundle.
-  const t = label(`d = ${d}`, {
-    size: 0.22,
-    color: RIEMANN_COLOR,
-    anchorY: onRightEdge ? 'middle' : 'bottom',
-    position: onRightEdge
-      ? [px(ex) + 0.14, py(ey), 0.2]
-      : [px(ex) + 0.14, py(ey) + 0.06, 0.2],
-  });
-  t.visible = false;
-  stage.add(t);
-  return t;
-});
-
-// ---------------------------------------------------------------------------
-// Legend and readout
-// ---------------------------------------------------------------------------
 
 // Clear of the strip just outside the box where the dimension names sit.
 const LEG_X = BOX_R + 1.55;
@@ -437,7 +304,7 @@ function legendRow(y: number, color: number, width: number, text: string): void 
 }
 
 legendRow(BOX_T - 0.15, RIEMANN_COLOR, 4.5, 'Riemann sums');
-legendRow(BOX_T - 0.58, MONTE_COLOR, 3.5, 'Monte Carlo');
+legendRow(BOX_T - 0.58, MONTE_COLOR, 2.8, 'Monte Carlo');
 
 const dimReadout = label('', {
   size: 0.42,
@@ -453,16 +320,259 @@ const noteReadout = label('', {
   position: [LEG_X, BOX_T - 2.05, 0],
 });
 
-stage.add(dimReadout, noteReadout);
+const budgetReadout = label('', {
+  size: 0.185,
+  color: C.slate,
+  lineHeight: 1.45,
+  anchorY: 'top',
+  position: [LEG_X, BOX_T - 3.0, 0],
+});
+
+stage.add(dimReadout, noteReadout, budgetReadout);
 
 // ---------------------------------------------------------------------------
-// Controls and timing
+// Everything that depends on the budget
 // ---------------------------------------------------------------------------
 
-const params = { animate: true, step: DIMS.length, guide: true };
+const dynamic = new THREE.Group();
+stage.add(dynamic);
+
+let rCurves: [number, number][][] = [];
+let mCurves: [number, number][][] = [];
+let rLines: ReturnType<typeof polyline>[] = [];
+let mLines: ReturnType<typeof polyline>[] = [];
+let rSeed: [number, number][][] = [];
+let mSeed: [number, number][][] = [];
+let dots: THREE.InstancedMesh[] = [];
+let dimLabels: ReturnType<typeof label>[] = [];
+let dimEnd: [number, number][] = [];
+let sweepFrom: number[] = [];
+let guide: ReturnType<typeof polyline> | null = null;
+let guideLabel: ReturnType<typeof label> | null = null;
+let replicates = 12;
+
+/** Points clamped to a reveal position, keeping the vertex count fixed. */
+function revealed(pts: [number, number][], xr: number, z: number): Pt[] {
+  const out: Pt[] = [];
+  let last: [number, number] = pts[0];
+  for (let i = 0; i < pts.length; i++) {
+    const [x, y] = pts[i];
+    if (x <= xr) {
+      last = [x, y];
+      out.push([px(x), py(y), z]);
+    } else {
+      if (i > 0 && pts[i - 1][0] <= xr) {
+        const [xp, yp] = pts[i - 1];
+        const t = (xr - xp) / (x - xp);
+        last = [xr, yp + (y - yp) * t];
+      }
+      out.push([px(last[0]), py(last[1]), z]);
+    }
+  }
+  return out;
+}
+
+/** Thousands separators, matching the cost ticks. */
+function grouped(n: number): string {
+  return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}
+
+/**
+ * Empty the dynamic group and release its GPU resources. The line materials
+ * stay registered in lines.ts — a handful of dead entries there is harmless,
+ * and leaving the buffers on the card across a dozen rebuilds would not be.
+ */
+function clearDynamic(): void {
+  for (const child of [...dynamic.children]) {
+    dynamic.remove(child);
+    const c = child as unknown as {
+      geometry?: { dispose?: () => void };
+      material?: { dispose?: () => void } | { dispose?: () => void }[];
+      dispose?: () => void;
+    };
+    c.geometry?.dispose?.();
+    if (Array.isArray(c.material)) for (const m of c.material) m.dispose?.();
+    else c.material?.dispose?.();
+    c.dispose?.();
+  }
+}
+
+function rebuild(): void {
+  const budget = Math.round(Math.pow(2, params.budget));
+  replicates = Math.max(4, Math.min(32, Math.round(TARGET_WORK / budget)));
+
+  const started = performance.now();
+  const steps = ladder(budget);
+  rCurves = DIMS.map((d) => clip(riemannCurve(d, budget)));
+  mCurves = DIMS.map((d) => clip(monteCarloCurve(d, steps, replicates)));
+  const buildMs = performance.now() - started;
+
+  X1 = Math.log10(budget);
+  DECX = BOX_W / (X1 - X0);
+
+  clearDynamic();
+
+  // Cost gridlines and ticks. Every decade if they fit, otherwise every other.
+  const stride = DECX >= 0.7 ? 1 : 2;
+  for (let e = Math.ceil(X0); e <= X1 + 1e-9; e += stride) {
+    const line = polyline([[px(e), py(Y0), 0], [px(e), py(Y1), 0]], {
+      color: C.slateDeep,
+      width: 1.2,
+    });
+    line.position.z = -0.2;
+    dynamic.add(
+      line,
+      label(grouped(Math.round(Math.pow(10, e))), {
+        size: 0.19,
+        color: C.ash,
+        anchorX: 'center',
+        position: [px(e), py(Y0) - 0.34, 0],
+      }),
+    );
+  }
+
+  // The guide: what slope −1/2 looks like on this box, at this budget.
+  const GUIDE_Y0 = -0.3;
+  guide = polyline([[px(X0), py(GUIDE_Y0), 0], [px(X1), py(GUIDE_Y0 - X1 / 2), 0]], {
+    color: C.slateDeep,
+    width: 2,
+    dashed: true,
+    dashSize: 0.13,
+    gapSize: 0.09,
+  });
+  guide.position.z = -0.1;
+  guideLabel = label('slope -1/2', {
+    size: 0.19,
+    color: C.slate,
+    anchorX: 'right',
+    position: [px(X1) - 0.05, py(GUIDE_Y0 - X1 / 2 - 0.45), 0],
+  });
+  dynamic.add(guide, guideLabel);
+
+  // Line2 needs two vertices; a dimension with a single affordable grid is
+  // carried by its dot, and one with none is not drawn at all.
+  const pad = (pts: [number, number][]): [number, number][] =>
+    pts.length >= 2 ? pts : pts.length === 1 ? [pts[0], pts[0]] : [[X0, Y0], [X0, Y0]];
+
+  rSeed = rCurves.map(pad);
+  mSeed = mCurves.map(pad);
+
+  rLines = rSeed.map((pts) => {
+    const line = polyline(revealed(pts, X1, 0.1), { color: RIEMANN_COLOR, width: 4.5 });
+    dynamic.add(line);
+    return line;
+  });
+  // Thinner than the grid curves: five sampled runs overlap, and the point is
+  // that they are one line up to noise rather than five things to tell apart.
+  mLines = mSeed.map((pts) => {
+    const line = polyline(revealed(pts, X1, 0.05), { color: MONTE_COLOR, width: 2.8 });
+    dynamic.add(line);
+    return line;
+  });
+
+  /** A dot per affordable grid — the only resolutions that fit in the budget. */
+  dots = rCurves.map((pts) => {
+    const mesh = new THREE.InstancedMesh(
+      new THREE.CircleGeometry(0.055, 20),
+      flat(RIEMANN_COLOR),
+      Math.max(1, pts.length),
+    );
+    mesh.frustumCulled = false;
+    mesh.position.z = 0.15;
+    mesh.count = 0;
+    const m = new THREE.Matrix4();
+    pts.forEach((p, i) => mesh.setMatrixAt(i, m.makeTranslation(px(p[0]), py(p[1]), 0)));
+    mesh.instanceMatrix.needsUpdate = true;
+    dynamic.add(mesh);
+    return mesh;
+  });
+
+  /**
+   * Name each dimension where its grid curve *ends* — the one place the five
+   * are reliably far apart. When the budget affords no grid at all, the name
+   * moves onto the sampled curve, which is the only one left to label.
+   */
+  dimEnd = DIMS.map((_, i) => {
+    const src = rCurves[i].length > 0 ? rCurves[i] : mCurves[i];
+    return src[src.length - 1] ?? [X1, Y1];
+  });
+
+  const onRightEdge: boolean[] = [];
+  dimLabels = DIMS.map((d, i) => {
+    const [ex, ey] = dimEnd[i];
+    onRightEdge[i] = ex > X1 - 1e-6;
+    // Outside the box on the right: inside, these land on the sampled bundle.
+    // Always middle-anchored, so the de-collision pass below is comparing like
+    // with like; the ones that end short of the edge just sit a little higher.
+    const t = label(`d = ${d}`, {
+      size: 0.22,
+      color: rCurves[i].length > 0 ? RIEMANN_COLOR : MONTE_COLOR,
+      anchorY: 'middle',
+      position: [px(ex) + 0.14, py(ey) + (onRightEdge[i] ? 0 : 0.16), 0.2],
+    });
+    t.visible = false;
+    dynamic.add(t);
+    return t;
+  });
+
+  // Curves can finish within a few percent of each other — at a small budget
+  // d = 4 and d = 16 land almost on top of one another. Walk the names in
+  // height order and push any that crowd a neighbour upwards; there is nothing
+  // above the stack but empty margin.
+  const MIN_GAP = 0.34; // centre to centre, against a cap height of 0.22
+  const NEAR_X = 0.85; // about one label wide
+  const order = DIMS.map((_, i) => i).sort(
+    (a, b) => dimLabels[a].position.y - dimLabels[b].position.y,
+  );
+  for (let k = 1; k < order.length; k++) {
+    const here = dimLabels[order[k]];
+    for (let j = 0; j < k; j++) {
+      const other = dimLabels[order[j]];
+      if (Math.abs(other.position.x - here.position.x) > NEAR_X) continue;
+      if (here.position.y < other.position.y + MIN_GAP) {
+        here.position.y = other.position.y + MIN_GAP;
+      }
+    }
+  }
+
+  sweepFrom = DIMS.map((_, i) =>
+    Math.min(rCurves[i][0]?.[0] ?? X1, mCurves[i][0]?.[0] ?? X1),
+  );
+
+  setText(
+    budgetReadout,
+    `budget: ${grouped(budget)} evaluations\n${replicates} runs averaged`,
+  );
+
+  // Start the sweep over, so the slider reads as "re-run from here".
+  stage.t = 0;
+
+  console.info(
+    `curse-of-dimension: budget ${budget}, ${replicates} replicates, built in ` +
+      `${buildMs.toFixed(0)} ms; grids affordable: ` +
+      `${rCurves.map((c, i) => `d=${DIMS[i]}:${c.length}`).join(' ')}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Controls
+// ---------------------------------------------------------------------------
+
+const params = { animate: true, step: DIMS.length, guide: true, budget: 16 };
+
 ui.params.add(params, 'animate').name('sweep through dimensions');
 ui.params.add(params, 'step', 0, DIMS.length, 0.01).name('progress');
 ui.params.add(params, 'guide').name('show the -1/2 guide');
+// Rebuilt on release, not during the drag: one rebuild is about a second of
+// honest sampling, and doing that per mouse-move would lock the page up.
+ui.params
+  .add(params, 'budget', 8, 18, 1)
+  .name('budget (2 to the n)')
+  .onFinishChange(() => rebuild());
+
+// ---------------------------------------------------------------------------
+// Timing
+// ---------------------------------------------------------------------------
 
 const LEAD = 0.9;
 const SWEEP = 1.6;
@@ -489,24 +599,31 @@ function note(i: number): string {
   const n = rCurves[i].length;
   if (n === 0) return 'no grid at all fits\nin the budget';
   if (n === 1) return 'one grid fits in the budget:\ntwo points per axis';
-  return `${n} grids fit in the budget,\nup to ${Math.floor(Math.pow(NMAX, 1 / DIMS[i]) + 1e-9)} points per axis`;
+  const finest = Math.floor(Math.pow(Math.pow(10, X1), 1 / DIMS[i]) + 1e-9);
+  return `${n} grids fit in the budget,\nup to ${finest} points per axis`;
 }
+
+// ---------------------------------------------------------------------------
+// Update
+// ---------------------------------------------------------------------------
+
+rebuild();
 
 stage.frame((t) => {
   const p = params.animate ? progressAt(t) : params.step;
-  guide.visible = params.guide;
-  guideLabel.visible = params.guide;
+  if (guide) guide.visible = params.guide;
+  if (guideLabel) guideLabel.visible = params.guide;
 
   for (let i = 0; i < DIMS.length; i++) {
     // How far this dimension's sweep has travelled, in log-cost. It starts at
     // the cheapest thing this dimension has to show rather than at the left
     // edge, or a quarter of every sweep is spent crossing empty box.
     const local = Math.min(1, Math.max(0, p - i));
-    const xr = SWEEP_FROM[i] + (X1 - SWEEP_FROM[i]) * local;
-
+    const xr = sweepFrom[i] + (X1 - sweepFrom[i]) * local;
     const shown = local > 0;
-    rSeries[i].line.visible = shown;
-    mSeries[i].line.visible = shown;
+
+    rLines[i].visible = shown && rCurves[i].length >= 2;
+    mLines[i].visible = shown && mCurves[i].length >= 2;
     // The name lands as the curve reaches the place it is parked.
     dimLabels[i].visible = shown && xr >= dimEnd[i][0] - 1e-9;
 
@@ -515,8 +632,8 @@ stage.frame((t) => {
       continue;
     }
 
-    setPolyline(rSeries[i].line, revealed(rSeries[i].pts, xr, 0.1));
-    setPolyline(mSeries[i].line, revealed(mSeries[i].pts, xr, 0.05));
+    setPolyline(rLines[i], revealed(rSeed[i], xr, 0.1));
+    setPolyline(mLines[i], revealed(mSeed[i], xr, 0.05));
 
     let visible = 0;
     for (const q of rCurves[i]) if (q[0] <= xr + 1e-9) visible++;
@@ -534,9 +651,3 @@ stage.frame((t) => {
 });
 
 stage.start();
-
-console.info(
-  `curse-of-dimension: built ${DIMS.length} dimensions in ${buildMs.toFixed(0)} ms ` +
-    `(${REPLICATES} replicates, cost ceiling ${NMAX}); ` +
-    `grids affordable per dimension: ${rCurves.map((c, i) => `d=${DIMS[i]}:${c.length}`).join(' ')}`,
-);

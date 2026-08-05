@@ -43,6 +43,9 @@ const stage = createStage({
   controls: false,
 });
 stage.duration = 10;
+// The converged estimate is the point, so the ramp completes early and the
+// picture sits on its final N before the loop restarts.
+const HOLD = 2.0;
 
 const ui = createUI(stage);
 const VIEW_LEFT = -HALF_W;
@@ -214,7 +217,7 @@ const dummy = new THREE.Object3D();
 const SPIKE_W = 0.006;
 
 stage.frame((t) => {
-  const u = stage.duration > 0 ? (t % stage.duration) / stage.duration : 0;
+  const u = stage.progress(t, HOLD);
 
   let n = Math.round(params.N);
   if (params.mode === 'stream') {

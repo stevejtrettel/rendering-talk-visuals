@@ -58,7 +58,7 @@ const ui = createUI(stage);
 const RX = 2.55;
 const RY = 2.196;
 const WALL = 0.16;
-const DISC = { x: -0.78, y: -0.85, r: 0.709 };
+const DISC = { x: -0.78, y: -1.487, r: 0.709 };
 const ROOM_Y = 0.15;
 
 const NW = 40;
@@ -358,7 +358,9 @@ const FRAG = /* glsl */ `
 
   /** Darken the last sliver of a patch, so the tiling is visible. */
   float seam(float f) {
-    return 0.45 + 0.55 * smoothstep(0.0, 0.09, min(f, 1.0 - f));
+    // Near-black and wide: the gaps between patches are the point, so they are
+    // drawn as gaps rather than as a hint of shading.
+    return 0.12 + 0.88 * smoothstep(0.0, 0.15, min(f, 1.0 - f));
   }
   float seamDisc(vec2 n) {
     float a = atan(n.y, n.x) + 3.14159265;

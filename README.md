@@ -93,6 +93,18 @@ no length control on purpose: stop short and the motion is cut mid-cycle, run
 over and the movie repeats itself. Set `stage.duration` to the length you want
 and press `V`.
 
+`stage.progress(t)` is the loop phase in [0, 1] — what a motion that returns to
+where it started should ride. `stage.progress(t, hold)` finishes `hold` seconds
+early and parks at 1, which is what a demo that *ramps to a result* wants: the
+answer stays up long enough to read, and it is exactly what the last exported
+frame contains. (The capture ends at `duration − 1/fps`, so a ramp reaching 1
+only at the very end never quite gets there.) The convergence demos —
+`riemann-1d`, `riemann-2d`, `monte-carlo-1d`, `monte-carlo-2d`,
+`importance-sampling` — all end on a hold.
+
+`demo.html?d=<name>&t=<seconds>` opens a demo frozen at that instant, which is
+how to check what a given moment looks like without waiting for it.
+
 ## Framing
 
 The canvas holds a locked 16:9 box, letterboxed in the window, and exports at
@@ -129,6 +141,7 @@ src/response.ts        the CIE observer and the spectrum-to-colour step
 src/still-life.ts      the subject the camera demos photograph, as spectra
 src/field2d.ts         shared 3D scenery for the surface demos
 src/room2d.ts          shared 2D room, spectra and graph panel for the light-field demos
+src/bundle2d.ts        the state space over the 2D room's boundary — the two tori, their cells, the unroll
 src/sampling.ts        seeded RNG + inverse-CDF densities (importance sampling)
 src/capture.ts         stills and frame-stepped video
 src/ui.ts              lil-gui panel and keyboard shortcuts
