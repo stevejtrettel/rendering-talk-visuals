@@ -110,6 +110,10 @@ stage.frame((t) => {
   const phase = stage.progress(t);
   const u = stage.progress(t, HOLD);
   if (params.autoOrbit) autoOrbit(stage, phase, START_ANGLE);
+  // Auto-orbit is a returning motion: with it on the export has to run the full
+  // loop or the circle is cut mid-turn. With it off the export stops the instant
+  // the ramp lands on its final N, and preview still parks on the answer.
+  stage.captureEnd = params.autoOrbit ? undefined : stage.duration - HOLD;
 
   let n = Math.round(params.N);
   if (params.mode === 'converge') {

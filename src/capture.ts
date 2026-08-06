@@ -15,7 +15,11 @@ import type { Stage } from './stage';
 import { textSettled } from './text';
 
 export interface VideoOptions {
-  /** Seconds of footage. Defaults to the stage's loop duration. */
+  /**
+   * Seconds of footage. Defaults to `stage.captureEnd` if the demo declares
+   * one, otherwise the stage's loop duration. Passing this explicitly always
+   * captures a plain cyclic span, endpoint excluded.
+   */
   duration?: number;
   fps?: number;
   /** 'mp4' (H.264, plays everywhere) or 'prores' (huge, pristine, alpha). */
@@ -31,9 +35,39 @@ function canvasBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   );
 }
 
-/** Let the browser actually paint before we read pixels back. */
-function nextFrame(): Promise<void> {
-  return new Promise((r) => requestAnimationFrame(() => r()));
+/**
+ * Yield to the browser between captured frames — but never wait on it.
+ *
+ * A bare `requestAnimationFrame` here is what made long exports stall. Chrome
+ * stops delivering animation frames whenever it decides the page is not
+ * visible: another window covering this one, the window unfocused, the display
+ * asleep, macOS App Nap. The export loop then sits on a callback that never
+ * comes, and jiggling the mouse wakes the compositor for exactly one frame, so
+ * the capture advances one step per mouse move. That is the bug, and it looks
+ * for all the world like a rendering problem.
+ *
+ * Racing rAF against a timer fixes it. When the window is visible rAF wins in
+ * about 16 ms and nothing changes; when it is not, the timer keeps the loop
+ * moving. Timers are themselves throttled in a background tab, so a hidden
+ * export runs slowly rather than quickly — but it runs, and it finishes.
+ *
+ * Not waiting for a paint is safe because the renderer is created with
+ * `preserveDrawingBuffer: true`: the drawing buffer holds what was last drawn
+ * into it regardless of whether the compositor has shown it, and `toBlob`
+ * flushes any pending GL work before reading back. The yield is here to let
+ * fetches and the progress toast breathe, not because the pixels need it.
+ */
+function nextFrame(timeoutMs = 250): Promise<void> {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      resolve();
+    };
+    requestAnimationFrame(finish);
+    setTimeout(finish, timeoutMs);
+  });
 }
 
 /** Save a single PNG at full export resolution into out/stills/. */
@@ -64,15 +98,15 @@ export async function saveVideo(
   name: string,
   opts: VideoOptions = {},
 ): Promise<string> {
-  const {
-    duration = stage.duration,
-    fps = 60,
-    format = 'mp4',
-    startTime = 0,
-    onProgress,
-  } = opts;
+  const { fps = 60, format = 'mp4', startTime = 0, onProgress } = opts;
 
-  const total = Math.round(duration * fps);
+  // A demo that ramps to a result declares where its motion ends, and the last
+  // frame lands on that instant exactly. A cyclic demo stops one frame short of
+  // its duration instead, since frame 0 and frame `duration` are the same
+  // picture and capturing both makes the loop stutter.
+  const ramped = opts.duration === undefined && stage.captureEnd !== undefined;
+  const duration = opts.duration ?? stage.captureEnd ?? stage.duration;
+  const total = Math.round(duration * fps) + (ramped ? 1 : 0);
   const wasRunning = true;
   const savedTime = stage.t;
 

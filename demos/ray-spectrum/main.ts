@@ -49,7 +49,6 @@
 import * as THREE from 'three';
 import { createStage, createUI, C, ramp } from '@';
 import { polyline, setPolyline, type Pt } from '@/lines';
-import { label, setText, fixed } from '@/text';
 import { mulberry32 } from '@/sampling';
 
 // ---------------------------------------------------------------------------
@@ -309,27 +308,10 @@ for (let lam = 0.6; lam <= LAM_MAX + 1e-9; lam += 0.2) {
       { color: C.slateDeep, width: 2 },
     ),
   );
-  spectrumPlane.add(
-    label(lam.toFixed(1), {
-      size: 0.2,
-      color: C.slate,
-      anchorX: 'center',
-      anchorY: 'top',
-      position: [0, -0.16, z],
-    }),
-  );
 }
-// Sits past the far end of the axis rather than at its midpoint, where it would
-// land on top of a tick label.
-spectrumPlane.add(
-  label('wavelength', {
-    size: 0.28,
-    color: C.slate,
-    anchorX: 'center',
-    anchorY: 'top',
-    position: [0, -0.2, lamToZ(LAM_MAX) - 0.9],
-  }),
-);
+// The ticks carry the axis on their own — no numbers, no axis word. The slide
+// and the speaker say which way wavelength runs, and the picture is about the
+// shape of the curve rather than about reading a value off it.
 
 // The packet.
 const signal = polyline(
@@ -382,36 +364,6 @@ const curve = polyline(
 );
 curve.renderOrder = 5;
 stage.add(curve);
-
-// ---------------------------------------------------------------------------
-// Readout
-// ---------------------------------------------------------------------------
-
-const ASPECT = 16 / 9;
-const KEYS = ['wave length', 'components drawn'];
-const values = KEYS.map((key, i) => {
-  const y = 0.88 - i * 0.115;
-  stage.hud.add(
-    label(key, { size: 0.05, color: C.slate, anchorY: 'middle', position: [-ASPECT + 0.08, y, 0] }),
-  );
-  const val = label('', {
-    size: 0.05,
-    color: C.bone,
-    anchorY: 'middle',
-    position: [-ASPECT + 0.62, y, 0],
-  });
-  stage.hud.add(val);
-  return val;
-});
-
-// The one thing the picture could be misread as saying, said plainly.
-stage.hud.add(
-  label('samples of a continuum — the curve is the spectrum', {
-    size: 0.055,
-    color: C.ochre,
-    position: [-ASPECT + 0.08, -0.93, 0],
-  }),
-);
 
 // ---------------------------------------------------------------------------
 // Controls
@@ -560,9 +512,6 @@ stage.frame((t) => {
   }
   setPolyline(curve, curvePts);
   curve.visible = params.curve && spread > 0.02;
-
-  setText(values[0], fixed(length, 2));
-  setText(values[1], String(n));
 });
 
 stage.start();

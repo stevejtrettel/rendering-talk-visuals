@@ -114,3 +114,95 @@ export function simpson(f: (x: number) => number, a: number, b: number, n = 2000
 /** The reference value every demo compares itself against. */
 export const LUMPY_AREA = simpson(lumpy, A, B);
 export const BUMPY_AREA = simpson(bumpy, BUMPY_A, BUMPY_B);
+
+// ---------------------------------------------------------------------------
+// A narrow bump in a wide dead interval — the integrand for importance-intro
+// ---------------------------------------------------------------------------
+
+/** Wide on purpose: the point is how much of it holds nothing. */
+export const PEAKED_A = -10;
+export const PEAKED_B = 10;
+
+/**
+ * A bump about four and a half units wide in an interval of twenty, so roughly
+ * four fifths of the domain is flat and empty. Uniform sampling puts four
+ * fifths of its samples there, which is what makes the case for aiming them.
+ *
+ * The ripple has to stay gentle enough that the bump keeps its shape and steep
+ * enough to be visibly not-a-Gaussian: the demo built on this samples from a
+ * density proportional to f itself, so any wiggle here appears in the density
+ * too and the two curves coincide regardless.
+ */
+export function peaked(x: number): number {
+  const envelope = Math.exp(-(x * x) / (2 * 0.75 * 0.75));
+  return envelope * (1 + 0.3 * Math.sin(3.4 * x) + 0.18 * Math.cos(6.1 * x));
+}
+
+/** The reference value. */
+export const PEAKED_AREA = simpson(peaked, PEAKED_A, PEAKED_B, 80000);
+
+/**
+ * Definite integral over a square, by Simpson's rule in each variable.
+ *
+ * Tensor-product Simpson, not a sampled reference: the demos that use this are
+ * *about* sampling, and a reference estimated by sampling would be comparing a
+ * method against a worse version of itself. `n = 400` puts twenty points across
+ * the narrowest feature of `ridge2d`, which is several digits past anything a
+ * few thousand samples can resolve.
+ */
+export function simpson2d(
+  f: (x: number, y: number) => number,
+  a: number,
+  b: number,
+  n = 400,
+): number {
+  return simpson((x) => simpson((y) => f(x, y), a, b, n), a, b, n);
+}
+
+// ---------------------------------------------------------------------------
+// A narrow ridge — the integrand for the 2D importance-sampling demo
+// ---------------------------------------------------------------------------
+
+/**
+ * The ridge runs at this angle, so it crosses the square diagonally rather
+ * than lying along a row of the floor grid — which would invite the reading
+ * that the shape is an artefact of the axes.
+ */
+export const RIDGE_ANGLE = Math.PI / 6;
+/** Spread along the ridge and across it. The ratio is what makes it a strip. */
+export const RIDGE_SX = 1.3;
+export const RIDGE_SY = 0.18;
+/** Scaled so the crest stands a little above the bumps2d landscape. */
+const RIDGE_AMP = 1.5;
+
+/** Rotate into the ridge's own frame: u along it, v across it. */
+export function ridgeFrame(x: number, y: number): [number, number] {
+  const c = Math.cos(RIDGE_ANGLE);
+  const s = Math.sin(RIDGE_ANGLE);
+  return [x * c + y * s, -x * s + y * c];
+}
+
+/**
+ * A Gaussian strip through the middle of the square, roughened by a ripple.
+ *
+ * Nearly all of its mass sits in a thin diagonal band: away from the crest the
+ * envelope is numerically zero, so a uniform sample out there contributes
+ * nothing but still costs an evaluation. That is the waste importance sampling
+ * exists to fix, and it is why this integrand is shaped the way it is.
+ *
+ * The ripple stays in [0.48, 1.52], so the product is strictly positive — it
+ * has to be, since a matching density is drawn from it. Its amplitude is held
+ * down on purpose: roughness the proposal cannot know about is variance no
+ * amount of importance sampling removes, so a wilder ripple would flatter
+ * uniform sampling by handicapping the method being demonstrated.
+ */
+export function ridge2d(x: number, y: number): number {
+  const [u, v] = ridgeFrame(x, y);
+  const envelope = Math.exp(-0.5 * ((u / RIDGE_SX) ** 2 + (v / RIDGE_SY) ** 2));
+  const ripple =
+    1 + 0.25 * Math.sin(2.9 * u) + 0.16 * Math.cos(4.7 * v) + 0.11 * Math.sin(1.7 * u + 3.1 * v);
+  return RIDGE_AMP * envelope * ripple;
+}
+
+/** The exact volume under `ridge2d` over the square. */
+export const RIDGE_VOLUME = simpson2d(ridge2d, -FIELD_HALF, FIELD_HALF);

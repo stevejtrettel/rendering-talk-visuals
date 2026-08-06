@@ -143,7 +143,10 @@ The deck's audience is mathematicians, and the pictures are arguments.
   pictures are claims about what is *stored*, and a reasonable-looking edit can
   quietly turn one into a lie (re-indexing a fiber is fine, re-computing it is
   not; a black cell there is usually backface radiance, not absence). Read
-  `notes/light-field-demos.md` before touching them.
+  `notes/light-field-demos.md` before touching them. **One exception, and it is
+  deliberate:** `light-field-spectra` draws reconstructed metamers, because the
+  bake stores rgb and the tracer behind it is not spectral. It argues about the
+  model, not about the bundle, and its header says so.
 
 ## Animation grammar
 

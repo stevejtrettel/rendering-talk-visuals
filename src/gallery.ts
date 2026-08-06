@@ -17,7 +17,12 @@ if (demos.length === 0) {
     sections.get(key)!.push(d);
   }
 
+  // Within a section, order by title rather than folder name. The sets that
+  // are one shot in several parts number their titles, and the folder names
+  // do not sort that way — light-field-* is fibers, forest, unfold, which is
+  // 2, 3, 1. Section order still comes from the by-name sort in allDemos().
   for (const [section, entries] of sections) {
+    entries.sort((a, b) => (a.title ?? a.name).localeCompare(b.title ?? b.name));
     const h = document.createElement('h2');
     h.textContent = `${section} · ${entries.length}`;
     list.appendChild(h);

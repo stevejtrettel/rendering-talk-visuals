@@ -102,19 +102,21 @@ export function createUI(stage: Stage, opts: UIOptions = {}): DemoUI {
   }
 
   // --- capture -------------------------------------------------------------
-  // No length control. A demo's loop period is the only length worth exporting:
-  // stop short and the motion is cut mid-cycle, run over and the export repeats
-  // itself. So the button always renders exactly one loop from t = 0, and the
-  // only thing left to choose is how finely it is sampled.
+  // No length control. The length worth exporting is a property of the demo,
+  // not a choice: a cyclic demo wants exactly one loop — stop short and the
+  // motion is cut mid-cycle, run over and the export repeats itself — and a
+  // demo that ramps to a result wants to stop the moment it gets there, which
+  // is what `stage.captureEnd` says. Either way the only thing left to choose
+  // is how finely it is sampled.
   const capture = { fps, format: 'mp4' as 'mp4' | 'prores' };
 
-  /** Restart at t = 0 and capture exactly one loop at the chosen frame rate. */
+  /** Restart at t = 0 and capture the demo's own span at the chosen frame rate. */
   const renderLoop = () =>
     saveVideo(stage, name, {
       fps: capture.fps,
-      // Read at press time, not at panel-build time: a demo may have changed
-      // its duration, and exporting the old one would silently cut the motion.
-      duration: stage.duration,
+      // `duration` is deliberately not passed: saveVideo reads captureEnd or the
+      // loop period at press time, so a demo that has since changed either one
+      // exports the right span instead of a silently stale one.
       startTime: 0,
       format: capture.format,
       onProgress: (d, t) => toast(`frame ${d}/${t}  (${Math.round((100 * d) / t)}%)`, 0),

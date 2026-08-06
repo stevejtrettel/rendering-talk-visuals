@@ -38,6 +38,12 @@ export const INFO: Record<string, DemoInfo> = {
     blurb: 'A brightly lit room with nothing emitting, iterating T alone. Everything decays, but the pale walls let their corridor linger.',
     section: 'Modeling the Light Field',
   },
+  'iterate-from-black': {
+    title: 'Iterating from Nothing',
+    blurb:
+      'One dark room with E + TL applied ten times, and under it the composition that produced each picture — 0, then E + T0, then E + T(E + T0), written out in full the whole way rather than giving up and counting. The single room is what buys the room for it.',
+    section: 'Modeling the Light Field',
+  },
   'fixed-point': {
     title: 'The Equilibrium Light Field',
     blurb: 'Two rooms iterating E + TL from wildly different starts, converging to the same field. The operator is a real matrix on boundary patches.',
@@ -97,6 +103,42 @@ export const INFO: Record<string, DemoInfo> = {
     blurb: 'Part VII. The tori split along their undersides, unroll and flatten into the five arrays a renderer holds — one per wall plus the object — then fill with a solved field. The bottom half of each is flat because the materials are Lambertian; the top half is a panorama of the room.',
     section: 'The State Space',
   },
+  // Part VII's "Storing a light field", in 3D — the same argument the
+  // state-space demos make about the 2D room, carried out on a real baked
+  // field imported as data from the light-field repo. One continuous shot
+  // in three parts, so the titles are numbered: the folder names sort
+  // fibers, forest, unfold, which is not playing order.
+  // See notes/light-field-demos.md before changing these.
+  'light-field-unfold': {
+    title: 'Storing a Light Field — 1. The Room Unfolds',
+    blurb:
+      'A lit Cornell room comes apart into the flat textures its light is kept in — walls hinging open, the cube unfolding like cardboard, the sphere opening octahedrally. The light is a baked equilibrium field rather than a shading model, and every chart hangs off the edge it physically shares, so the first frame is the actual scene and the net is whatever that room unfolds into.',
+    section: 'Light Fields in 3D',
+  },
+  'light-field-fibers': {
+    title: 'Storing a Light Field — 2. The Fiber Over a Pixel',
+    blurb:
+      'Spheres rise over pixel after pixel, each tinted by its own surface: over every point there is a whole S-squared of directions light can leave in. All but one fade, and the survivor unwraps into the 8x8 grid actually stored — which on a diffuse surface is constant. It was baked without that shortcut, one random walk per direction bin, so the flat tile is 64 estimators agreeing rather than a definition.',
+    section: 'Light Fields in 3D',
+  },
+  'light-field-forest': {
+    title: 'Storing a Light Field — 3. Every Pixel At Once',
+    blurb:
+      'All 1,575 fibers at the same time, flying in and shrinking until each lands exactly on the pixel it belongs to. The sheet becomes a nested grid, 8x8 cells inside every cell, in the same physical space — sixty-four times the numbers and not one millimetre more room. The camera closes in as the tiles land, so the grid grows underneath them and it reads as subdivision.',
+    section: 'Light Fields in 3D',
+  },
+  'light-field-atlas': {
+    title: 'Storing a Light Field — 4. The Room and Its Atlas',
+    blurb:
+      'The lit room on the right, and on the left every chart of its light field packed flat — the same texels, off the surfaces and in the arrangement a renderer keeps them in. A marker walks the room and the matching cell lights in the panel. The net of demo 1 is derived from the geometry; a packing is not, and charts that sit side by side here are not neighbours in the room.',
+    section: 'Light Fields in 3D',
+  },
+  'light-field-spectra': {
+    title: 'Storing a Light Field — 5. Every Pixel Holds a Spectrum',
+    blurb:
+      'Over every texel of the flat net a curve stands up: wavelength across, radiance up. Not a colour per pixel but a function per pixel — the spectral factor, where demo 3 showed the directional one. The bake is RGB, so each curve is a reconstructed metamer in the deck\'s own basis rather than stored data, which the demo header states and a slide should too.',
+    section: 'Light Fields in 3D',
+  },
   'linear-scene': {
     title: 'The Scene is a Linear Map',
     blurb: 'One lamp, then the other, then both — three rooms simulated independently, with the spectrum at a shared probe stacking exactly.',
@@ -132,6 +174,12 @@ export const INFO: Record<string, DemoInfo> = {
     blurb: 'A wave on a ray slides apart into sinusoids, and the curve through their crests is the spectrum it carries.',
     section: 'Modeling Light',
   },
+  'wave-room': {
+    title: 'The Wave Equation, Solved',
+    blurb:
+      'A pulse from a point in a room of pillars, slabs, a slit and a concave wall, with the 2D wave equation stepped forward on a grid — shadows, diffraction, a caustic and reverberation all falling out of the one PDE. Switch the display to the time average and the oscillation integrates out into something that looks like a rendered image.',
+    section: 'Modeling Light',
+  },
   'wave-to-ray': {
     title: 'Small Wavelength Limit',
     blurb: 'A Huygens–Kirchhoff wave field bouncing off two mirrors, with the wavelength shrinking until it collapses onto the ray paths drawn over it.',
@@ -159,7 +207,20 @@ export const INFO: Record<string, DemoInfo> = {
   },
   'monte-carlo-2d': {
     title: 'Monte Carlo (2D)',
-    blurb: 'Spikes under a glass surface, each wrapped in a cylinder whose volume is its contribution.',
+    blurb:
+      'A lobed region with a hole through it, sitting inside the usual square plate, with the graph drawn only above it. Points are thrown uniformly into the region and each carries a cylinder whose volume is its contribution — the method working somewhere a grid is awkward, with no claim about how fast it gets there.',
+    section: 'Integration',
+  },
+  'importance-intro': {
+    title: 'Where the Weight Comes From',
+    blurb:
+      'One integrand, one estimator, and a density that slides from uniform toward the bump. The same random numbers are remapped rather than redrawn, so the samples crowd inward and each one\'s rectangle narrows to pay for it — the weight 1/(Np) is the width of the domain that sample stands in for.',
+    section: 'Integration',
+  },
+  'importance-2d': {
+    title: 'Importance Sampling in 2D',
+    blurb:
+      'A narrow diagonal ridge, estimated twice with the same number of samples: uniformly over the square, and from a normal with the ridge\'s own oval shape. Each sample\'s cylinder has the volume it contributes, so the reweighting is visible as discs that shrink where the samples crowd.',
     section: 'Integration',
   },
   'importance-sampling': {
@@ -176,16 +237,6 @@ export const INFO: Record<string, DemoInfo> = {
     title: 'Riemann Sums (1D)',
     blurb: 'Midpoint bars under a lumpy function. Full sum, left-to-right sweep, or a convergence ramp.',
     section: 'Integration',
-  },
-  'hello-3d': {
-    title: 'Hello 3D',
-    blurb: 'Palette and lighting check — mineral colours against the void.',
-    section: 'Scaffolding',
-  },
-  'hello-graph': {
-    title: 'Hello Graph',
-    blurb: 'A 1D function drawn in the flat 2D stage. Starting point for Riemann sums.',
-    section: 'Scaffolding',
   },
 };
 

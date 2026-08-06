@@ -13,12 +13,24 @@ not a shading model: it is a **baked equilibrium radiance field**,
 L\* = (I−K)⁻¹E, solved on the GPU in a separate repo and loaded here as
 data. Nothing in this repo computes light; it draws a solved field.
 
+They are the **Light Fields in 3D** section of the index page, titled
+`Storing a Light Field — 1/2/3` after the Part VII slide they serve. The
+folder names sort fibers, forest, unfold, so the numbering in the titles is
+what puts them in playing order — `gallery.ts` sorts within a section by
+title for exactly this reason.
+
 1. **unfold** — the room comes apart into the flat textures its light is
    kept in.
 2. **fibers** — over pixel after pixel, the whole sphere of directions light
    could leave in; one unwraps into the 8×8 grid actually stored.
 3. **forest** — every pixel's grid at once: 64× the numbers in the same
    space, camera pulling in so the grid grows as the tiles shrink.
+4. **atlas** — the room whole on the right, its charts packed flat on the
+   left, a marker tying one to the other. Split viewport: perspective
+   right, orthographic left, via a `stage.render` shadowed in the demo.
+5. **spectra** — a curve standing over every texel of the net: the
+   spectral factor, where **forest** showed the directional one. **The one
+   demo here that is not drawing solved data** — see below.
 
 ## Where the data comes from
 
@@ -92,6 +104,28 @@ one is easy to "improve" into something false.
    them, so no isometric unfolding exists. The animation shows *the map*
    opening out. Never narrate it as unfolding cardboard.
 
+6. **A net and a packing are different claims.** `peel.ts` derives the net
+   from the geometry, so where a sheet lands is a fact about the room.
+   `atlas.ts` packs rectangles, and that is a fact about nothing — charts
+   adjacent in the panel are not adjacent in the room, and reshuffling the
+   packing loses no information. Never narrate the panel as an unfolding.
+   Texel sizes are preserved across the packing, which is the one thing
+   storage does care about; absolute scale is not preserved across the
+   divider, since one side is perspective and the other orthographic.
+
+7. **`light-field-spectra` draws a RECONSTRUCTION, and the slide has to
+   say so.** The bake is not spectral — the payload is rgb plus a sample
+   count per (texel, direction), because the tracer that made it is an RGB
+   tracer. Every curve in that demo is a metamer: the smooth positive
+   spectrum, in `still-life.ts`'s three-curve basis, whose XYZ matches the
+   stored colour. So it supports a claim about the MODEL — a light field
+   assigns a spectrum to every state — and *not* a claim about this
+   bundle. "Here is what we stored" is false of that demo alone.
+   Measured on this bundle: 557 of 1,575 texels clamp a negative weight to
+   zero, worst case worth 0.32 of that pixel's luminance, concentrated on
+   the saturated walls. If the field is ever re-baked spectrally, delete
+   `reconstruct` and read the curve out of the payload.
+
 Bonus, less philosophical but bites immediately:
 
 - Grid borders are measured in **pixels** via `fwidth`, not in cell
@@ -117,9 +151,6 @@ rather than 25 KB, and it is worth saying out loud on the slide.
 - **Timings are guesses.** `stage.duration` is 11 / 24 / 11 s. Nobody has
   watched these against the actual narration. `light-field-fibers` is much
   the longest, mostly the tour at the end — the obvious first cut.
-- **Not in `src/registry.ts`.** They show with prettified folder names. That
-  file had uncommitted work in it when these landed, so it was left alone;
-  add titles and blurbs when convenient.
 - **A collapse beat exists but is off.** `COLLAPSE = false` in
   `light-field-forest`. It fades every tile to its hemisphere mean —
   100,800 cells becoming the 1,575-pixel texture a diffuse scene really
@@ -156,6 +187,12 @@ Useful instants:
 | fibers | 16 | the survivor touring the sheets |
 | forest | 3.5 | tiles flying in |
 | forest | 8.0 | landed: bright diamonds in dark rims, camera close |
+| atlas | 4.0 | rock toward the red wall, marker on it and on the red chart |
+| atlas | 12.0 | rock toward the green wall, same for green |
+| atlas | 15.0 | marker on the cube's top face, and on its 5×5 chart |
+| spectra | 0.4 | the flat net, before anything stands up |
+| spectra | 6.0 | curves half grown, camera pulling in |
+| spectra | 11.2 | in close: one curve per texel, legible, red wall peaking long |
 
 Software rendering (swiftshader) is fine for all of it — nothing here needs
 a real GPU, since the expensive part already happened in the other repo.

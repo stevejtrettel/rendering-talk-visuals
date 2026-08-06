@@ -135,9 +135,12 @@ const values: ReturnType<typeof label>[] = CELL_KEYS.map((key, i) => {
 // Controls
 // ---------------------------------------------------------------------------
 
+// `converge` by default: the demo's job on the slide is to show the sum getting
+// finer, and a static picture of one subdivision is what the slider is for.
+// In this mode N is the count the ramp *finishes* on, not the count on screen.
 const params = {
-  mode: 'sum' as 'sum' | 'sweep' | 'converge',
-  N: 16,
+  mode: 'converge' as 'sum' | 'sweep' | 'converge',
+  N: 100,
   samples: true,
 };
 ui.params.add(params, 'mode', ['sum', 'sweep', 'converge']).name('mode');
@@ -156,6 +159,11 @@ const smoothstep = (x: number) => {
 
 stage.frame((t) => {
   const u = stage.progress(t, HOLD);
+  // Both animated modes ramp to a final state and park on it, so export stops
+  // the instant they get there rather than running out the hold — the movie
+  // ends on the finished sum instead of sitting on it. Nothing here returns to
+  // where it started, so there is no cycle to cut.
+  stage.captureEnd = stage.duration - HOLD;
 
   let n = Math.round(params.N);
   if (params.mode === 'converge') {

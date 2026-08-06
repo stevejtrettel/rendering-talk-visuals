@@ -246,10 +246,10 @@ stage.add(
   }),
 );
 
-// Four labels, which are the whole narrative in four phrases.
+// The labels, which are the narrative in a few phrases. The response curves
+// carry no header of their own — the speaker names them.
 const headers: [string, number, number][] = [
   ['the spectrum arriving', (LX0 + LX1) / 2, LBASE + LUNIT + 0.22],
-  ['the sensor response', (RX0 + RX1) / 2, ROW_Y[0] + 1.02],
   ['the value', (BAR_X[0] + BAR_X[2]) / 2, BAR_BASE + BAR_H + 0.22],
   ['what a display shows', (SQ_X + SQ_X1) / 2, SQ_Y + SQ_H / 2 + 0.16],
 ];

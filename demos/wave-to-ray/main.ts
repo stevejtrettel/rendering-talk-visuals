@@ -4,10 +4,20 @@
  * A beam leaves an aperture on the left, bounces off a flat mirror, and is
  * folded back and focused by a concave one. The picture is a *wave*
  * calculation, and the only thing that changes over the loop is the wavelength:
- * as λ shrinks the beam stops spreading, its edges harden, and the blur at the
- * focus contracts onto the caustic that ray optics predicts — drawn over the
- * top as thin lines. Nothing about the geometry changes; the limit does all the
- * work.
+ * it opens at a λ comparable to the mirror itself, where there is no beam at
+ * all and the frame is chaotic, and as λ shrinks the beam gathers, its edges
+ * harden, and the blur at the focus contracts onto a caustic. Nothing about the
+ * geometry changes; the limit does all the work.
+ *
+ * The tail is the argument. The rays ray optics predicts are held back for the
+ * whole ramp and only faded in once the wavelength has bottomed out; the two
+ * run together for a beat; then the wave field fades away and the rays are left
+ * holding the frame — three seconds for the whole handover, since the ramp has
+ * already made the case and a slow crossfade only delays the conclusion.
+ * Wave, then wave and rays, then rays — which is the limit, said in the order
+ * it should be said. Shown throughout, the lines
+ * would give the answer away and invite the eye to read the field as being
+ * built out of them; it is not, and the overlay never touches it.
  *
  * ## How the field is computed
  *
@@ -49,16 +59,18 @@
  *
  * ## The floor on λ
  *
- * Where two waves cross, the fringes are λ/2 apart, and at the small end of the
- * ramp that approaches one pixel. The shader supersamples and the default
- * display is intensity rather than the raw field, which holds it together; but
- * the ramp deliberately stops at a chosen λ rather than running to zero.
+ * Where two waves cross, the fringes are λ/2 apart, so a short enough λ puts
+ * them under a pixel and the picture turns to moiré. That used to be what set
+ * the bottom of the ramp; it no longer is. The ramp now stops where the *image*
+ * stops changing, at λ = 0.035, which leaves the fringes about three pixels
+ * apart at 1920 wide — comfortably resolved, with the shader's supersampling
+ * and the intensity display in hand besides. The limit being argued is a limit,
+ * not a race to the smallest number the screen will hold.
  */
 
 import * as THREE from 'three';
 import { createStage, createUI, C, flat } from '@';
 import { polyline, setPolyline } from '@/lines';
-import { label, setText } from '@/text';
 
 const ORTHO_H = 3;
 const HALF_W = (ORTHO_H * 16) / 9;
@@ -71,7 +83,29 @@ const stage = createStage({
   lights: false,
   controls: false,
 });
-stage.duration = 16;
+// The ramp gets 11.7 seconds — frame 700 of a 60 fps export, which is where the
+// picture stops changing (see LAMBDA_MIN) — and the closing argument is appended
+// after it rather than carved out of it.
+stage.duration = 16.5;
+
+// The tail, in seconds, beat by beat. The whole demo is one sentence — a wave
+// calculation, then the rays it converges to, then the rays alone — and this is
+// where it is said.
+//
+// The handover is deliberately quick: three seconds flat from the first ray
+// appearing to the last of the wave field going. By then the limit has already
+// been argued for fifteen seconds and the audience is ahead of the picture —
+// dwelling on the crossfade only makes them wait for a conclusion they have
+// drawn. The three beats are equal so none of them reads as the point.
+/** The rays come up over the top, the wavelength already at its smallest. */
+const RAY_FADE = 1.0;
+/** Both together: the claim and the thing it is a claim about. */
+const BOTH_HOLD = 1.0;
+/** The wave field goes, having made its point. */
+const WAVE_FADE = 1.0;
+/** Ray optics alone, which is where the rest of the talk starts. */
+const END_HOLD = 1.8;
+const TAIL = RAY_FADE + BOTH_HOLD + WAVE_FADE + END_HOLD;
 
 const ui = createUI(stage);
 
@@ -437,7 +471,9 @@ const target = new THREE.WebGLRenderTarget(64, 64, {
 
 const screen = new THREE.Mesh(
   new THREE.PlaneGeometry(2 * HALF_W, 2 * ORTHO_H),
-  new THREE.MeshBasicMaterial({ map: target.texture }),
+  // Transparent from the start so the closing fade is a change of opacity and
+  // nothing else — the field it is showing is computed identically throughout.
+  new THREE.MeshBasicMaterial({ map: target.texture, transparent: true }),
 );
 screen.position.z = -1;
 stage.add(screen);
@@ -626,11 +662,25 @@ function packSources(stages: Stage[]): number {
 
 const RAY_COUNT = 9;
 const RAY_POINTS = 5; // start + up to three bounces + exit
+/** Weight of the overlay once it is fully up — it annotates, it does not shout. */
+const RAY_ALPHA = 0.75;
+/**
+ * Half-width of the ray fan, as a fraction of the aperture's Gaussian waist.
+ * Launched across the full waist the outermost rays sit where the Gaussian is
+ * already well down, so the fan read wider than the bright core it is meant to
+ * be annotating; 0.85 pulls them onto it. Symmetric about `SOURCE.center`, so
+ * the beam narrows about its own axis and stays on the same line.
+ *
+ * This is the overlay only. `SOURCE.waist` itself is untouched — it sets the
+ * aperture the wave calculation actually uses, and narrowing that would change
+ * the field rather than the annotation drawn over it.
+ */
+const RAY_SPREAD = 0.85;
 
 const rayLines = Array.from({ length: RAY_COUNT }, () => {
   const l = polyline(
     Array.from({ length: RAY_POINTS }, () => [0, 0, 0] as [number, number, number]),
-    { color: C.bone, width: 2, opacity: 0.75 },
+    { color: C.bone, width: 2, opacity: RAY_ALPHA },
   );
   l.renderOrder = 8;
   stage.add(l);
@@ -711,24 +761,38 @@ function traceRay(start: Vec, dir: Vec, out: [number, number, number][]): void {
 }
 
 // ---------------------------------------------------------------------------
-// Readout
-// ---------------------------------------------------------------------------
-
-const readout = label('', {
-  size: 0.19,
-  color: C.bone,
-  position: [-HALF_W + 0.25, -ORTHO_H + 0.75, 0],
-  lineHeight: 1.5,
-});
-readout.renderOrder = 9;
-stage.add(readout);
-
-// ---------------------------------------------------------------------------
 // Controls
 // ---------------------------------------------------------------------------
 
-const LAMBDA_MAX = 0.5;
-const LAMBDA_MIN = 0.012;
+/**
+ * The ramp runs from a wavelength comparable to the mirror itself down to one
+ * some thirty-five times smaller — about sixty wavelengths across the arc.
+ *
+ * It used to run on to λ = 0.012 and 170 wavelengths across, and that was time
+ * spent for nothing: the beam has finished gathering and the caustic has
+ * finished contracting well before then, so the last few seconds were a picture
+ * that had already stopped changing. The rate of the sweep is unchanged — it is
+ * the same log ramp, cut where it stops saying anything new, which lands at
+ * frame 700 of a 60 fps export. Everything before that point is frame for frame
+ * what it always was.
+ *
+ * Stopping earlier is also what makes the demo cheap: sample spacing tracks λ,
+ * so the source count at the small end falls from ~1350 to ~470 and the shader
+ * sums a third as many terms per pixel.
+ *
+ * Starting this long is a deliberate choice about what the opening frame should
+ * say: at λ ≈ 1.2 the mirror is barely one wavelength across, there is no beam
+ * to speak of, and the frame is a chaotic spray of interference — which is the
+ * honest "before" for a limit argument. Be aware what it costs: physical optics
+ * takes the field on a mirror to be the incident field, and that approximation
+ * is only good for a mirror many wavelengths across. At the top of the ramp it
+ * is not quantitatively trustworthy. The qualitative claim it is making there —
+ * no beam, no rays, only spreading interference — is right, and the argument
+ * this demo exists to make lives at the *other* end of the ramp, where the
+ * approximation is excellent.
+ */
+const LAMBDA_MAX = 1.2;
+const LAMBDA_MIN = 0.035;
 
 const params = {
   ramp: true,
@@ -758,7 +822,9 @@ const rayPts: [number, number, number][][] = Array.from({ length: RAY_COUNT }, (
 const bufSize = new THREE.Vector2();
 
 stage.frame((t) => {
-  const u = stage.duration > 0 ? (t % stage.duration) / stage.duration : 0;
+  // The ramp finishes TAIL seconds early and parks at the smallest wavelength;
+  // the tail is where the rays come up and the finished picture runs.
+  const u = stage.progress(t, TAIL);
 
   // Log ramp: equal steps in "wavelengths across the mirror", which is the
   // number that actually matters, rather than in λ itself.
@@ -792,16 +858,41 @@ stage.frame((t) => {
   stage.renderer.setRenderTarget(prev);
 
   // --- the ray prediction --------------------------------------------------
+  //
+  // Held back for the whole ramp, then faded in over the top. Drawing them from
+  // the start would give the answer away and, worse, would invite the eye to
+  // read the field as being *made* of them — it is not; the overlay is computed
+  // separately and never touches the field. Withheld, the picture argues in the
+  // right order: watch the wave field contract onto a caustic on its own, and
+  // only then see the lines ray optics predicts laid over where it landed.
+  //
+  // `held` is seconds since the wavelength bottomed out; the tail is read off
+  // it directly, in seconds, so retiming a beat is editing one number.
+  const held = Math.max(0, (t % stage.duration) - (stage.duration - TAIL));
+  const smooth = (x: number) => {
+    const c = Math.min(1, Math.max(0, x));
+    return c * c * (3 - 2 * c);
+  };
+
+  const rayAlpha = params.ramp ? smooth(held / RAY_FADE) : params.rays ? 1 : 0;
+
+  // ...and then the field itself goes, leaving ray optics holding the frame.
+  // Opacity, not exposure: the field being drawn is the same field throughout,
+  // and dimming it through the tone curve would look like the physics changing.
+  const waveAlpha = params.ramp
+    ? 1 - smooth((held - (RAY_FADE + BOTH_HOLD)) / WAVE_FADE)
+    : 1;
+  (screen.material as THREE.MeshBasicMaterial).opacity = waveAlpha;
+  screen.visible = waveAlpha > 0.002;
+
   const tan = perp(SOURCE.axis);
   for (let i = 0; i < RAY_COUNT; i++) {
-    const s = ((i / (RAY_COUNT - 1)) * 2 - 1) * SOURCE.waist;
+    const s = ((i / (RAY_COUNT - 1)) * 2 - 1) * SOURCE.waist * RAY_SPREAD;
     traceRay(add(SOURCE.center, tan, s), SOURCE.axis, rayPts[i]);
     setPolyline(rayLines[i], rayPts[i]);
-    rayLines[i].visible = params.rays;
+    (rayLines[i].material as THREE.Material & { opacity: number }).opacity = RAY_ALPHA * rayAlpha;
+    rayLines[i].visible = rayAlpha > 0.002;
   }
-
-  const across = mirrorLength(MIRRORS[1]) / lambda;
-  setText(readout, `wavelength  ${lambda.toFixed(3)}\nmirror  ${Math.round(across)} wavelengths`);
 });
 
 stage.start();

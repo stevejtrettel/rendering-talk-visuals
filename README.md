@@ -93,6 +93,15 @@ no length control on purpose: stop short and the motion is cut mid-cycle, run
 over and the movie repeats itself. Set `stage.duration` to the length you want
 and press `V`.
 
+**Unless the demo ramps to a result.** A demo that reaches a final state and
+then parks on it can set `stage.captureEnd` — usually `duration - HOLD` — and
+export stops the moment it gets there, with the last frame landing on that
+instant exactly. The movie ends on the answer instead of sitting on it, and the
+preview still runs the full loop so the answer stays up long enough to read.
+The 2D integration demos set this whenever auto-orbit is off; with it on they
+clear it, because an orbit is a *returning* motion and a shortened export would
+cut the circle mid-turn.
+
 `stage.progress(t)` is the loop phase in [0, 1] — what a motion that returns to
 where it started should ride. `stage.progress(t, hold)` finishes `hold` seconds
 early and parks at 1, which is what a demo that *ramps to a result* wants: the

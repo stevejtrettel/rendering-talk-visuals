@@ -248,7 +248,16 @@ function octGeometry(R: number): THREE.BufferGeometry {
   return geo;
 }
 
-function cellMaterial(data: Float32Array, w: number, h: number, border = 0.75): THREE.ShaderMaterial {
+/** A cell grid over a float texture. Exported because the atlas panel is
+ * the same two things — a chart's texels, and borders measured in pixels —
+ * seen flat instead of on a surface, and drawing it with a second shader
+ * would let the two pictures of one texture drift apart. */
+export function cellMaterial(
+  data: Float32Array,
+  w: number,
+  h: number,
+  border = 0.75,
+): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
       map: { value: dataTex(data, w, h) },

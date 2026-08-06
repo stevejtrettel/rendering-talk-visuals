@@ -60,6 +60,18 @@ export class Stage {
   duration = 8;
   /** When true, t wraps at `duration` instead of running forever. */
   loop = true;
+  /**
+   * The instant a demo's motion is finished, for demos that ramp to a result
+   * rather than returning to where they started. Export stops there, with the
+   * last frame landing on it exactly, instead of running out the rest of the
+   * loop — so the movie ends on the final state instead of sitting on it.
+   *
+   * Live preview still runs the whole `duration`, so the answer stays up long
+   * enough to read before the loop restarts. A demo that *returns* — anything
+   * riding `progress(t)` with no hold, including auto-orbit — must leave this
+   * unset, or its export is cut mid-cycle and no longer loops.
+   */
+  captureEnd?: number;
 
   private frameFns: FrameFn[] = [];
   private _hud?: THREE.Scene;
