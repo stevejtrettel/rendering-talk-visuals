@@ -52,6 +52,9 @@ export interface AtlasPanel {
   size: { w: number; h: number };
   /** Highlight one cell of one chart, or pass null to clear. */
   highlight(chartIdx: number | null, lx?: number, ly?: number): void;
+  /** The material a chart is drawn with, so a demo can share a glow
+   * texture between this panel and the room's copy of the same chart. */
+  material(chartIdx: number): THREE.ShaderMaterial | null;
   /** Centre of a cell, in the panel's own (centred) coordinates. */
   cellCentre(chartIdx: number, lx: number, ly: number): THREE.Vector3;
   dispose(): void;
@@ -164,6 +167,8 @@ export function createAtlasPanel(
     slots,
     size: { w: packed.w, h: packed.h },
     highlight,
+    material: (i: number) =>
+      meshes[i] ? (meshes[i]!.material as THREE.ShaderMaterial) : null,
     cellCentre,
     dispose(): void {
       for (const m of meshes) {

@@ -60,7 +60,7 @@
  */
 
 import * as THREE from 'three';
-import { createStage, C } from '@';
+import { createStage, createUI, C } from '@';
 import { applyShot, createUnwrap, frameBox, lerpShot, ramp, smootherstep } from '@/lightfield/unwrap';
 import { chartSurface } from '@/lightfield/tiles';
 import { BASE, project } from '@/still-life';
@@ -68,6 +68,9 @@ import { NS } from '@/room2d';
 
 const stage = createStage({ controls: false, lights: false });
 stage.duration = 13;
+
+// For the Capture panel and the `V` key — see light-field-unfold.
+createUI(stage);
 
 const u = await createUnwrap(stage);
 const camera = stage.camera as THREE.PerspectiveCamera;

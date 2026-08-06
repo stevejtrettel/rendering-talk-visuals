@@ -43,11 +43,16 @@
  */
 
 import * as THREE from 'three';
-import { createStage } from '@';
+import { createStage, createUI } from '@';
 import { createUnwrap, frameBox, lerpShot, ramp, smootherstep, type Shot } from '@/lightfield/unwrap';
 
 const stage = createStage({ controls: false, lights: false });
 stage.duration = 11;
+
+// This demo drives its own camera and has nothing to tweak, but it still wants
+// the Capture panel: without `createUI` there is no render button and no `V`,
+// so the only way to get a file out is a screen recording.
+createUI(stage);
 
 const u = await createUnwrap(stage);
 const camera = stage.camera as THREE.PerspectiveCamera;

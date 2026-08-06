@@ -44,11 +44,14 @@
  */
 
 import * as THREE from 'three';
-import { createStage } from '@';
+import { createStage, createUI } from '@';
 import { applyShot, createUnwrap, frameBox, ramp, smootherstep } from '@/lightfield/unwrap';
 
 const stage = createStage({ controls: false, lights: false });
 stage.duration = 24;
+
+// For the Capture panel and the `V` key — see light-field-unfold.
+createUI(stage);
 
 const u = await createUnwrap(stage);
 const camera = stage.camera as THREE.PerspectiveCamera;

@@ -139,6 +139,18 @@ export const INFO: Record<string, DemoInfo> = {
       'Over every texel of the flat net a curve stands up: wavelength across, radiance up. Not a colour per pixel but a function per pixel — the spectral factor, where demo 3 showed the directional one. The bake is RGB, so each curve is a reconstructed metamer in the deck\'s own basis rather than stored data, which the demo header states and a slide should too.',
     section: 'Light Fields in 3D',
   },
+  'light-field-image': {
+    title: 'Storing a Light Field — 6. Photographing It',
+    blurb:
+      'A camera outside the open front, a grid of pixels on its image plane, and every pixel filled by one ray and one lookup: hit the first surface, read the radiance already stored there in the direction back to the eye. Nothing bounces — not even on the glossy sphere, whose stored fiber is view-dependent and answers the question directly. 4,096 pixels, 16,384 rays, zero bounces.',
+    section: 'Light Fields in 3D',
+  },
+  'light-field-scan': {
+    title: 'Storing a Light Field — 7. Watching the Memory Get Read',
+    blurb:
+      'The demo before it, split: the same exposure on the right, and on the left the field\'s charts packed flat. Every pixel the camera measures flares the texel it read — brightly in the panel, faintly on the surface in the room. The sweep crosses the image in neat rows; the glow does nothing of the kind, jumping charts the instant a ray crosses a silhouette. Viewing order and storage order have nothing to do with each other.',
+    section: 'Light Fields in 3D',
+  },
   'linear-scene': {
     title: 'The Scene is a Linear Map',
     blurb: 'One lamp, then the other, then both — three rooms simulated independently, with the spectrum at a shared probe stacking exactly.',

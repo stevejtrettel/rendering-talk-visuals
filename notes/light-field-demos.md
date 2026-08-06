@@ -31,6 +31,16 @@ title for exactly this reason.
 5. **spectra** — a curve standing over every texel of the net: the
    spectral factor, where **forest** showed the directional one. **The one
    demo here that is not drawing solved data** — see below.
+6. **image** — a camera outside the open front, every pixel filled by one
+   ray and one lookup. Nothing bounces.
+7. **scan** — **image** split in two, with the packed charts beside it and
+   the texel each pixel read flaring in both. It is a literal copy of
+   `light-field-image` plus a panel, so a change worth having in one is
+   worth copying to the other; nothing keeps them in step automatically.
+6. **image** — a camera outside the open front photographs the field. One
+   ray and one array index per pixel; the readout says `bounces 0` and
+   means it. This is the demo the "known unfinished" note below asked for:
+   the diffuse-vs-glossy contrast is what makes the lookup sufficient.
 
 ## Where the data comes from
 
@@ -126,6 +136,16 @@ one is easy to "improve" into something false.
    the saturated walls. If the field is ever re-baked spectrally, delete
    `reconstruct` and read the curve out of the payload.
 
+8. **In `light-field-scan` the glow means READ, not lit.** A camera does
+   not illuminate what it points at, and a bloom on a surface is the
+   easiest thing in the world to misread as light. It is a cursor — the
+   convention `state-space-room` already uses — and the room's copy is
+   drawn deliberately fainter than the panel's so the panel reads as the
+   subject. On the slide: "this is the slot being read", never "the camera
+   lights it up". Worth adding that the lookup really reads one *cell of
+   the fiber* over that texel, so the flaring square is the pixel whose
+   fiber is consulted, not the single number returned.
+
 Bonus, less philosophical but bites immediately:
 
 - Grid borders are measured in **pixels** via `fwidth`, not in cell
@@ -156,9 +176,14 @@ rather than 25 KB, and it is worth saying out loud on the slide.
   100,800 cells becoming the 1,575-pixel texture a diffuse scene really
   keeps. It was built, then retired: resolving the field back to a flat
   texture undoes what the demo just showed. One constant brings it back.
-- The scene has a **glossy sphere** whose fibers genuinely are *not*
-  constant. Demo 2's tour ends on it, but no slide yet makes the
-  diffuse-vs-glossy contrast its subject. That is the natural fourth demo.
+- ~~The scene has a **glossy sphere** whose fibers genuinely are *not*
+  constant … that is the natural fourth demo.~~ **Done — `light-field-image`.**
+  Measured over the *outward* hemisphere, radiance across directions varies
+  by a factor of 1.5 on the red wall (CV 0.11), 5.0 on the floor (CV 0.33)
+  and without bound on the sphere (CV 1.05). Restricting to the outward
+  hemisphere is what makes that comparison mean anything: count the
+  into-the-surface bins too and a diffuse wall scores CV ≈ 1.0 as well,
+  because those bins are near zero. Claim 4 above, biting.
 
 ## Checking a change
 
@@ -193,6 +218,17 @@ Useful instants:
 | spectra | 0.4 | the flat net, before anything stands up |
 | spectra | 6.0 | curves half grown, camera pulling in |
 | spectra | 11.2 | in close: one curve per texel, legible, red wall peaking long |
+| scan | 2.5 | first hero ray out, its one texel lit in the panel |
+| scan | 12.0 | mid-sweep: card half filled, a row glowing in the back-wall chart |
+| scan | 17.5 | sweep near done, glow low in the charts it is crossing |
+| image | 0.8 | eye, frustum, empty grid, room — nothing measured yet |
+| image | 5.2 | a hero ray out to the ceiling light, one pixel lit |
+| image | 12 | the sweep, image half filled, rays fanning to the front |
+| image | 21 | complete image on the plane, rays cleared, nothing else moving |
+
+`light-field-image` traces its whole image once at load (~19 ms) and animates
+a reveal, so it is cheap per frame and byte-identical between runs — checked,
+because an export that re-traced per frame would only be exact by luck.
 
 Software rendering (swiftshader) is fine for all of it — nothing here needs
 a real GPU, since the expensive part already happened in the other repo.

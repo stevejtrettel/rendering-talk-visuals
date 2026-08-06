@@ -70,6 +70,8 @@ const CELL_FRAG = /* glsl */ `
   uniform float border;   // line half-width in PIXELS
   uniform vec2 sel;       // highlighted cell, or (-1,-1)
   uniform float fade;
+  uniform sampler2D glow; // per-texel excitation, r channel
+  uniform float glowGain; // 0 for every demo that does not scan
   varying vec2 vUv;
 
   void main() {
@@ -87,6 +89,14 @@ const CELL_FRAG = /* glsl */ `
 
     if (sel.x >= 0.0 && all(equal(floor(p), sel))) {
       c = mix(c, vec3(1.6, 1.45, 0.75), (1.0 - smoothstep(2.0, 3.6, d)) * 0.92);
+    }
+
+    // Added in LINEAR radiance, before the tone mapper, so a scanned texel
+    // blooms the way a bright thing in the room does rather than washing
+    // out to flat white. Sampled with the same vUv as the data, so a texel
+    // and its glow can never be one cell apart.
+    if (glowGain > 0.0) {
+      c += vec3(1.9, 1.6, 0.9) * texture2D(glow, vUv).r * glowGain;
     }
     gl_FragColor = vec4(c * fade, 1.0);
     #include <tonemapping_fragment>
@@ -248,6 +258,11 @@ function octGeometry(R: number): THREE.BufferGeometry {
   return geo;
 }
 
+/** One black texel, so the glow sampler is always bound even in the demos
+ * that never scan. A sampler left unset reads as undefined on some
+ * drivers, and this costs nothing. */
+const NO_GLOW = dataTex(new Float32Array([0, 0, 0, 1]), 1, 1);
+
 /** A cell grid over a float texture. Exported because the atlas panel is
  * the same two things — a chart's texels, and borders measured in pixels —
  * seen flat instead of on a surface, and drawing it with a second shader
@@ -265,6 +280,8 @@ export function cellMaterial(
       border: { value: border },
       sel: { value: new THREE.Vector2(-1, -1) },
       fade: { value: 1 },
+      glow: { value: NO_GLOW },
+      glowGain: { value: 0 },
     },
     vertexShader: CELL_VERT,
     fragmentShader: CELL_FRAG,
@@ -315,6 +332,8 @@ export interface Unwrap {
   /** Cell centre of a stop given as fractions across the chart. */
   stopPos(chartIdx: number, fx: number, fy: number): THREE.Vector3;
   highlight(chartIdx: number | null, lx?: number, ly?: number): void;
+  /** The material the room draws a chart with, for demos that light texels. */
+  chartMaterial(chartIdx: number): THREE.ShaderMaterial | null;
   boxes: { close: THREE.Box3; room: THREE.Box3; net: THREE.Box3; floor: THREE.Box3 };
   counts: { pixels: number; cells: number; bins: number };
   pickTargets: THREE.Object3D[];
@@ -542,15 +561,23 @@ export async function createUnwrap(stage: Stage): Promise<Unwrap> {
 
   // --- highlighting a source pixel ----------------------------------------
 
+  /** The material the room draws chart `i` with. Exposed so a demo can
+   * hand it a glow texture and light the same texel in the room and in a
+   * flat panel from one array — two pictures of one chart that cannot
+   * disagree, which is the point of the scanning demo. */
+  function chartMaterial(chartIdx: number): THREE.ShaderMaterial | null {
+    const mesh =
+      charts[chartIdx].kind === 1 ? sphereMesh : sheetMeshes.find((m) => m.userData.chart === chartIdx);
+    return mesh ? (mesh.material as THREE.ShaderMaterial) : null;
+  }
+
   let highlighted: THREE.ShaderMaterial | null = null;
   function highlight(chartIdx: number | null, lx = 0, ly = 0): void {
     if (highlighted) highlighted.uniforms.sel.value.set(-1, -1);
     highlighted = null;
     if (chartIdx === null) return;
-    const mesh =
-      charts[chartIdx].kind === 1 ? sphereMesh : sheetMeshes.find((m) => m.userData.chart === chartIdx);
-    if (!mesh) return;
-    const mat = mesh.material as THREE.ShaderMaterial;
+    const mat = chartMaterial(chartIdx);
+    if (!mat) return;
     mat.uniforms.sel.value.set(lx, ly);
     highlighted = mat;
   }
@@ -767,6 +794,7 @@ export async function createUnwrap(stage: Stage): Promise<Unwrap> {
     cellCentre,
     stopPos,
     highlight,
+    chartMaterial,
     boxes: { close: closeBox, room: roomBox, net: netBox, floor: floorBox },
     counts: {
       pixels,
@@ -793,9 +821,18 @@ export interface Shot {
  * the max. Dimension heuristics get this wrong for oblique views, where
  * depth trades against screen extent — and every shot here is oblique.
  */
+/**
+ * Frame a box, or an explicit set of points.
+ *
+ * Points matter when the thing being framed is a few objects with space
+ * between them rather than one solid volume. A `Box3` union of, say, a camera
+ * out in front and the room behind it has corners nothing occupies — left edge
+ * of the room at the depth of the eye — and fitting those invented corners
+ * zooms out until the actual content is a third of the frame.
+ */
 export function frameBox(
   camera: THREE.PerspectiveCamera,
-  box: THREE.Box3,
+  box: THREE.Box3 | THREE.Vector3[],
   dir: THREE.Vector3,
   margin = 1.05,
 ): Shot {
@@ -810,17 +847,21 @@ export function frameBox(
   const tanH = tanV * camera.aspect;
 
   const corners: THREE.Vector3[] = [];
-  for (let i = 0; i < 8; i++) {
-    corners.push(
-      new THREE.Vector3(
-        i & 1 ? box.max.x : box.min.x,
-        i & 2 ? box.max.y : box.min.y,
-        i & 4 ? box.max.z : box.min.z,
-      ),
-    );
+  if (Array.isArray(box)) {
+    for (const p of box) corners.push(p.clone());
+  } else {
+    for (let i = 0; i < 8; i++) {
+      corners.push(
+        new THREE.Vector3(
+          i & 1 ? box.max.x : box.min.x,
+          i & 2 ? box.max.y : box.min.y,
+          i & 4 ? box.max.z : box.min.z,
+        ),
+      );
+    }
   }
 
-  const target = box.getCenter(new THREE.Vector3());
+  const target = new THREE.Box3().setFromPoints(corners).getCenter(new THREE.Vector3());
   let dist = 1;
 
   // Fit, then RE-CENTRE, then fit again. An oblique view of a flat net

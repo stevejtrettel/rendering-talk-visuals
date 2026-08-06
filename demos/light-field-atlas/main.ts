@@ -44,13 +44,16 @@
  */
 
 import * as THREE from 'three';
-import { createStage, ASPECT, C } from '@';
+import { createStage, createUI, ASPECT, C } from '@';
 import { createUnwrap, frameBox } from '@/lightfield/unwrap';
 import { createAtlasPanel } from '@/lightfield/atlas';
 import { polyline } from '@/lines';
 
 const stage = createStage({ controls: false, lights: false });
 stage.duration = 16;
+
+// For the Capture panel and the `V` key — see light-field-unfold.
+createUI(stage);
 
 const u = await createUnwrap(stage);
 u.setPeel(0); // the room stays whole; the unfolding is demo 1
