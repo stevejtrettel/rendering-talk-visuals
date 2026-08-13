@@ -7,3 +7,8 @@ out/
 
 .DS_Store
 *.log
+
+# GitHub Pages build (scripts/build-all.mjs)
+dist-pages
+demos/*/index.html
+demos/__pages
