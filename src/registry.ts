@@ -64,6 +64,11 @@ export const INFO: Record<string, DemoInfo> = {
     blurb: 'Two chains grow, one from p and one from the lamp, then every pairing is tried. Blocked connections go black; clear ones flare and settle into a web.',
     section: 'Solving for the Light Field',
   },
+  'path-splits': {
+    title: 'The Same Path, Many Ways',
+    blurb: 'One complete path, recoloured by every split of it: t vertices from p, s from the lamp, and the connection sliding along. Add the strategies up and it is counted once per row.',
+    section: 'Solving for the Light Field',
+  },
   caustics: {
     title: 'Caustics are Critical Values',
     blurb: 'A moving water surface refracts a parallel beam onto the floor, with the light density measured underneath. The bright lines are exactly where the ray map has a fold.',
