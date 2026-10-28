@@ -8,7 +8,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "video": "node scripts/encode.mjs"
+    "video": "node scripts/encode.mjs",
+    "build:deck": "node scripts/build-deck.mjs"
   },
   "devDependencies": {
     "@types/markdown-it": "^14.2.0",
