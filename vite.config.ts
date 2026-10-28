@@ -1,6 +1,6 @@
 import { defineConfig, type PluginOption } from 'vite';
 import path from 'node:path';
-import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdirSync, writeFileSync, rmSync, existsSync, statSync, createReadStream } from 'node:fs';
 import { spawn } from 'node:child_process';
 
 const ROOT = __dirname;
@@ -108,6 +108,43 @@ function capturePipeline(): PluginOption {
   };
 }
 
+/**
+ * Where the deck's light-field pages come from: light-field's own build
+ * output, never its source (notes/deck.md). build-deck.mjs copies the same
+ * directory, so the deck in dev embeds exactly what it will ship with.
+ */
+export const LIGHTFIELD_DIST = path.resolve(ROOT, process.env.LIGHTFIELD_DIST ?? '../light-field/dist');
+
+const MIME: Record<string, string> = {
+  '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css',
+  '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml',
+  '.woff': 'font/woff', '.woff2': 'font/woff2', '.mp4': 'video/mp4',
+  '.mov': 'video/quicktime', '.webm': 'video/webm',
+};
+
+/**
+ * Dev-only: serve a directory outside the vite root at a URL prefix. The deck
+ * gets /lightfield/* and /media/* this way, at the same paths the built
+ * folder puts them.
+ */
+function serveDir(prefix: string, dir: string): PluginOption {
+  return {
+    name: `serve-dir:${prefix}`,
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use(prefix, (req, res, next) => {
+        let rel = decodeURIComponent(new URL(req.url ?? '/', 'http://x').pathname);
+        if (rel.endsWith('/')) rel += 'index.html';
+        const file = path.join(dir, rel);
+        if (!file.startsWith(dir + path.sep) || !existsSync(file) || !statSync(file).isFile()) return next();
+        res.setHeader('content-type', MIME[path.extname(file)] ?? 'application/octet-stream');
+        res.setHeader('content-length', statSync(file).size);
+        createReadStream(file).pipe(res);
+      });
+    },
+  };
+}
+
 /** Run ffmpeg over out/frames/<name> and leave a movie in out/. */
 export function encode(opts: { name: string; fps: number; format: 'mp4' | 'prores' }) {
   const { name, fps, format } = opts;
@@ -160,5 +197,9 @@ export default defineConfig({
     },
   },
   assetsInclude: ['**/*.hdr', '**/*.exr'],
-  plugins: [capturePipeline()],
+  plugins: [
+    capturePipeline(),
+    serveDir('/lightfield', LIGHTFIELD_DIST),
+    serveDir('/media', path.join(ROOT, 'talk/media')),
+  ],
 });

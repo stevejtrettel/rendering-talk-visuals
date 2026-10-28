@@ -76,6 +76,11 @@ function unmount(slide: HTMLElement) {
 function adopt(iframe: HTMLIFrameElement) {
   const win = iframe.contentWindow;
   if (!win) return;
+  // A light-field page starts with its chrome hidden: this is the class its
+  // own `h` key toggles, so `h` still brings the chrome back on stage.
+  if (iframe.parentElement?.dataset.src?.startsWith('lightfield/')) {
+    win.document.body.classList.add('talk-mode');
+  }
   win.addEventListener('keydown', (e) => {
     if (!pagingKey(e)) return;
     e.preventDefault();

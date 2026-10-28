@@ -98,8 +98,11 @@ that page's clean initial state. This is the demo contract applied to the
 deck: the slide shows the same thing every time it comes up.
 
 Mounting on entry costs load time on every visit. Light-field pages autoload a
-converged field, so the wait is a fetch plus device setup and no baking. Step
-4 below measures it. If it shows on stage, the fix is to preload the next
+converged field, so the wait is a fetch plus device setup and no baking.
+Measured 2026-10-28 (M-series, headless Chrome, files on local disk): the
+lab's field was autoloaded 0.24 s after the deck page loaded, and the room
+film had drawn a converged frame by 1.5 s. No preloading is needed. If a
+slower machine ever shows the wait on stage, the fix is to preload the next
 slide's embed while the current slide has none. It is not to keep two WebGPU
 pages alive at once.
 
@@ -113,7 +116,9 @@ this.
 **Not covered here: scripted initial state for light-field pages,** e.g.
 "open the lab already in split view". The lab reads no URL parameters, and
 synthesised key events race its async WebGPU init. For now the speaker presses
-`0`, which is a natural "watch this" beat anyway. If that turns out to be
+`0`, which is a natural "watch this" beat anyway. Note that the lab opens in
+its **normals** view, so a lit lab slide needs `8` pressed on arrival. That is
+the strongest argument for `?keys=`. If that turns out to be
 wrong, the fix belongs in light-field: a `?keys=` parameter that its demo host
 replays once the demo is ready.
 

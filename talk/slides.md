@@ -13,6 +13,10 @@ has its shape while the content is written.
 
 ---
 
+![](lightfield:room)
+
+---
+
 # The project I couldn't justify
 
 ---
@@ -58,6 +62,10 @@ $$L^\ast = \sum_{n \ge 0} K^n E = (I - K)^{-1} E.$$
 ---
 
 # Measuring it live
+
+---
+
+![](lightfield:lab)
 
 ---
 
