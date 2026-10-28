@@ -1,0 +1,146 @@
+/*
+ * The deck's look: the demos' black void and mineral palette (src/style.ts),
+ * set in the STIX Two Text the in-canvas labels use. All sizes are in cqh/cqw
+ * of the 16:9 frame, so a slide looks the same at any window size, and an
+ * embed gets real pixels rather than a scaled bitmap (notes/deck.md, "Sizing").
+ */
+
+@font-face {
+  font-family: 'STIX Two Text';
+  src: url('../assets/stix-two-text-regular.woff') format('woff');
+}
+
+:root {
+  --bone: #d9d1c2;
+  --ash: #9a9287;
+  --slate: #7c8b96;
+  --slate-deep: #3d4750;
+  --ochre: #d4a63f;
+  --rust: #b2543a;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #000;
+  overflow: hidden;
+}
+
+/* Letterboxed exactly like stage.ts letterboxes a demo. */
+#frame {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: min(100vw, 100vh * 16 / 9);
+  height: min(100vh, 100vw * 9 / 16);
+  container-type: size;
+  color: var(--bone);
+  font-family: 'STIX Two Text', serif;
+  font-size: 4.4cqh;
+  line-height: 1.4;
+}
+
+#err {
+  position: fixed;
+  inset: 0;
+  display: none;
+  place-content: center;
+  color: var(--rust);
+  font: 13px/1.6 ui-monospace, Menlo, monospace;
+}
+
+/* --- slides ---------------------------------------------------------------- */
+
+.slide {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  padding: 8cqh 9cqw;
+  display: none;
+  flex-direction: column;
+  gap: 3cqh;
+}
+.slide.current {
+  display: flex;
+}
+.slide > * {
+  margin: 0;
+}
+
+h1,
+h2,
+h3 {
+  font-weight: normal;
+  line-height: 1.15;
+}
+h1 {
+  font-size: 7.5cqh;
+}
+h2 {
+  font-size: 5.6cqh;
+  color: var(--slate);
+}
+strong {
+  color: var(--ochre);
+  font-weight: normal;
+}
+em {
+  color: var(--bone);
+}
+ul,
+ol {
+  padding-left: 1.2em;
+}
+li + li {
+  margin-top: 1.2cqh;
+}
+a {
+  color: var(--slate);
+}
+.katex {
+  font-size: 1.08em;
+}
+.katex-display {
+  margin: 0;
+}
+
+/* --- layout from content --------------------------------------------------- */
+
+/* Only a heading: a section title, set low and large. */
+.slide:has(> h1:only-child) {
+  justify-content: center;
+}
+.slide:has(> h1:only-child) h1 {
+  font-size: 11cqh;
+}
+
+/* A heading followed by a subtitle: the title slide. */
+.slide:has(> h1:first-child + h2:last-child) {
+  justify-content: center;
+}
+.slide:has(> h1:first-child + h2:last-child) h1 {
+  font-size: 11cqh;
+}
+
+/* An embed takes whatever room the rest of the slide leaves it. */
+.embed {
+  display: block;
+  flex: 1 1 0;
+  min-height: 0;
+  width: 100%;
+  object-fit: contain;
+  background: #000;
+}
+.embed iframe,
+.embed video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+/* Only an embed: full-bleed. */
+.slide:has(> .embed:only-child) {
+  padding: 0;
+}

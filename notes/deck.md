@@ -43,7 +43,8 @@ the two files unchanged.
   | `![](media/room.png)` | `<img>` |
 
 - **Layout comes from content, not from markup.** A slide containing only a
-  heading is a section title. A slide containing only an embed is full-bleed.
+  heading is a section title. A `#` heading followed only by a `##` subtitle is
+  the title slide. A slide containing only an embed is full-bleed.
   A heading plus an embed puts the heading above the embed and gives the
   embed the remaining space. Everything else is a text slide. CSS `:has()`
   makes these choices, so there is no layout syntax to learn or forget.
