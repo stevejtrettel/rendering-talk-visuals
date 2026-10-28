@@ -75,7 +75,8 @@ The rule is that **the deck owns paging, and the embed owns everything else.**
 - **Deck, always:** `→` `PageDown` next, `←` `PageUp` previous. These are the
   keys a presentation clicker sends.
 - **Deck, only when focus is in the deck itself:** `F` fullscreen, `Home` /
-  `End`.
+  `End`. A live embed takes focus as it loads, so these work only on slides
+  without one. Go fullscreen on the title slide.
 - **Embed:** everything else, so the lab's `8` `9` `0` `[` `]` `h`, the films'
   `space` `r` `f`, and the demos' `space` `r`.
 
@@ -83,8 +84,10 @@ The rule is enforced from outside the embed. When an iframe loads, the deck
 attaches a **capture-phase** keydown listener to the iframe's `window`. Capture
 on `window` runs before any handler the page registered, so the listener
 takes the paging keys, stops their propagation, and moves the deck. The
-embedded page never sees them, and it needs no changes. Clicking into the lab
-to orbit gives the iframe focus, and the clicker still pages. When a slide is
+embedded page never sees them, and it needs no changes. The deck focuses each embed as it loads, so a live
+slide's keys work on arrival with no click first (otherwise the film's `f`
+for free camera would hit the deck's fullscreen), and the clicker still
+pages. When a slide is
 left, its iframe is removed and focus falls back to the deck.
 
 What this costs: the films use `←` `→` to step frames while paused. That is an

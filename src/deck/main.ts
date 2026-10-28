@@ -86,6 +86,9 @@ function adopt(iframe: HTMLIFrameElement) {
     e.preventDefault();
     e.stopImmediatePropagation();
   }, true);
+  // A live slide is there to be driven: its keys work on arrival, without a
+  // click into it first. Paging still works, from the listener above.
+  win.focus();
 }
 
 // --- keys -------------------------------------------------------------------
