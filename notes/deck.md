@@ -116,6 +116,20 @@ class set by the deck when it loads. That is exactly what its `h` key toggles,
 so `h` still brings the chrome back on stage. No light-field code changes for
 this.
 
+**Sliders on the slide.** A slide can ask for lens sliders through the image
+title: `![](lightfield:room "aperture focus")`. The deck draws them under
+the page in its own style and wires them to `window.__lens`. That is the
+small interface the film page publishes for the deck (light-field
+`docs/23`): `ready`, `free()`, and `aperture` / `focus` as
+`{min, max, get, set}`. The deck does not set the page's own inputs through
+its DOM, because an edit to light-field's control bar would then break the
+talk silently. With the interface, the connection is explicit and its
+ranges are the page's own. On arrival the deck waits for `ready` and puts the
+page in free camera. The sliders follow the page every frame, so the focus
+slider tracks autofocus while you fly, and each drag hands the keyboard back
+to the page. Only controls a slide actually uses get drawn, and only
+controls the talk uses get added to `__lens`.
+
 **Not covered here: scripted initial state for light-field pages,** e.g.
 "open the lab already in split view". The lab reads no URL parameters, and
 synthesised key events race its async WebGPU init. For now the speaker presses

@@ -10,6 +10,11 @@
  *   ![](media/x.mp4)          a looping video
  *   ![](media/x.png)          a plain image
  *
+ * The image title names sliders the deck draws under a live light-field page,
+ * wired to the page's window.__lens (light-field docs/23):
+ *
+ *   ![](lightfield:room "aperture focus")
+ *
  * Live and video embeds are rendered as empty placeholders carrying their URL;
  * main.ts creates the iframe or video when the slide is entered and removes
  * it when the slide is left.
@@ -43,11 +48,13 @@ const md = new MarkdownIt({ html: true, typographer: true });
 
 md.renderer.rules.image = (tokens, idx) => {
   const src = String(tokens[idx].attrGet('src') ?? '');
+  const controls = String(tokens[idx].attrGet('title') ?? '').trim();
   const { kind, url } = resolveEmbed(src);
   if (kind === 'image') return `<img class="embed" src="${md.utils.escapeHtml(url)}" alt="">`;
   // A span, so it is legal inside the <p> markdown wraps it in; main.ts
   // lifts it out of that paragraph.
-  return `<span class="embed" data-kind="${kind}" data-src="${md.utils.escapeHtml(url)}"></span>`;
+  const data = controls ? ` data-controls="${md.utils.escapeHtml(controls)}"` : '';
+  return `<span class="embed" data-kind="${kind}" data-src="${md.utils.escapeHtml(url)}"${data}></span>`;
 };
 
 /**

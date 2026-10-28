@@ -57,7 +57,10 @@ function mount(slide: HTMLElement) {
     } else {
       const iframe = document.createElement('iframe');
       iframe.src = src;
-      iframe.addEventListener('load', () => adopt(iframe));
+      iframe.addEventListener('load', () => {
+        adopt(iframe);
+        if (holder.dataset.controls) void lensControls(holder, iframe, holder.dataset.controls.split(/\s+/));
+      });
       holder.appendChild(iframe);
     }
   }
@@ -80,6 +83,8 @@ function adopt(iframe: HTMLIFrameElement) {
   // own `h` key toggles, so `h` still brings the chrome back on stage.
   if (iframe.parentElement?.dataset.src?.startsWith('lightfield/')) {
     win.document.body.classList.add('talk-mode');
+    // Its own background is a dark grey, which shows around a letterboxed film.
+    win.document.body.style.background = '#000';
   }
   win.addEventListener('keydown', (e) => {
     if (!pagingKey(e)) return;
@@ -89,6 +94,66 @@ function adopt(iframe: HTMLIFrameElement) {
   // A live slide is there to be driven: its keys work on arrival, without a
   // click into it first. Paging still works, from the listener above.
   win.focus();
+}
+
+/** What a light-field film page publishes for the deck (light-field docs/23). */
+interface Lens {
+  ready: Promise<void>;
+  free(): void;
+  [control: string]: unknown;
+}
+interface LensControl {
+  min: number;
+  max: number;
+  get(): number;
+  set(v: number): void;
+}
+
+/**
+ * Sliders on the slide, drawn by the deck in the deck's style and wired to
+ * the page's window.__lens. The page publishes it after its async WebGPU
+ * init, so wait for it; then put the page in free camera, which is the only
+ * camera the lens drives.
+ */
+async function lensControls(holder: HTMLElement, iframe: HTMLIFrameElement, names: string[]) {
+  const win = iframe.contentWindow as (Window & { __lens?: Lens }) | null;
+  while (iframe.isConnected && !win?.__lens) await new Promise((r) => setTimeout(r, 50));
+  if (!iframe.isConnected || !win?.__lens) return;
+  const lens = win.__lens;
+  await lens.ready;
+  if (!iframe.isConnected) return;
+  lens.free();
+
+  const row = document.createElement('div');
+  row.className = 'controls';
+  const live: { input: HTMLInputElement; control: LensControl }[] = [];
+  for (const name of names) {
+    const control = lens[name] as LensControl | undefined;
+    if (!control) {
+      console.warn(`deck: this page has no lens control "${name}"`);
+      continue;
+    }
+    const label = document.createElement('label');
+    const input = document.createElement('input');
+    Object.assign(input, { type: 'range', min: control.min, max: control.max, step: (control.max - control.min) / 1000 });
+    input.addEventListener('input', () => control.set(Number(input.value)));
+    // Hand the keyboard back to the page, so a slider never holds focus and
+    // the page's keys (and an arrow key's paging) keep working.
+    input.addEventListener('change', () => win.focus());
+    label.append(name, input);
+    row.appendChild(label);
+    live.push({ input, control });
+  }
+  holder.appendChild(row);
+
+  // The page can move a value too (autofocus follows the screen centre as
+  // you fly), so the sliders follow the page, except the one being dragged.
+  const follow = () => {
+    if (!iframe.isConnected) return;
+    for (const { input, control } of live) if (!input.matches(':active')) input.value = String(control.get());
+    requestAnimationFrame(follow);
+  };
+  follow();
 }
 
 // --- keys -------------------------------------------------------------------

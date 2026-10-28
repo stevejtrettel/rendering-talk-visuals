@@ -13,7 +13,7 @@ has its shape while the content is written.
 
 ---
 
-![](lightfield:room)
+![](lightfield:room "aperture focus")
 
 ---
 
