@@ -137,6 +137,24 @@ duration and an N-ramp, so the two exported videos are frame-synchronised —
 drop both into Keynote side by side and they stay in step, at full resolution
 each, with the option of showing either alone.
 
+## The deck
+
+The light-field talk is an HTML deck in this repo. `notes/deck.md` explains
+why it is built this way.
+
+```bash
+npm run dev          # http://localhost:5173/deck.html#1
+npm run build:deck   # dist-deck/: one static folder, serve with python3 -m http.server
+```
+
+Slides are `talk/slides.md`: Markdown and `$…$` math, a `---` line between
+slides, and embeds written as images: `![](demo:radiance-2d)`,
+`![](lightfield:lab)`, `![](media/hero.mp4)`. Light-field pages come from
+light-field's **built** `dist/` (`npm run build` there first; override with
+`LIGHTFIELD_DIST`), served in dev and copied by `build:deck`. Arrows and
+PageUp/PageDown page, even with focus inside an embed. Every other key goes
+to the embed.
+
 ## Layout
 
 ```
@@ -156,6 +174,9 @@ src/capture.ts         stills and frame-stepped video
 src/ui.ts              lil-gui panel and keyboard shortcuts
 src/registry.ts        demo discovery + optional titles for the index page
 vite.config.ts         dev middleware that writes frames and runs ffmpeg
+deck.html, src/deck/    the talk deck: slide parsing, embeds, paging
+talk/slides.md         the deck's slides; talk/media/ holds its (git-ignored) videos
+scripts/build-deck.mjs the deck plus light-field's dist as one static folder
 ```
 
 ## Style

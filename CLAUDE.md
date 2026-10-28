@@ -17,8 +17,16 @@ Act rather than ask. Ask only when two readings would produce materially
 different work — and before asking, check whether the answer is in the repo. If
 something is already half-built and works, finish it rather than reverting it.
 
-`notes/slides.md` and `notes/path-tracing-talk-narrative*.md` are the talk's
-actual content. Read the relevant slide before designing a picture for it. They
+There are two talks. The MAA path-tracing talk is built in Keynote from this
+repo's exports. The light-field talk is an HTML deck that lives here:
+`talk/slides.md`, designed in `notes/deck.md`. Read that before changing the
+deck. Its load-bearing choice is that every embed is a same-origin iframe, so
+the deck takes the paging keys in the capture phase on the embed's window and
+never edits the embedded page.
+
+`notes/slides.md` and `notes/path-tracing-talk-narrative*.md` are the MAA
+talk's actual content, and the math sections of the light-field talk draw on
+them. Read the relevant slide before designing a picture for it. They
 are background, not instructions — take direction from Steve.
 
 ## The two scenes
@@ -75,6 +83,17 @@ Gotchas, all of which have cost time:
 - **Text may not appear.** troika lays out asynchronously and often misses the
   budget. Missing labels in a headless shot usually mean nothing is wrong.
 - Port 5173 is often another project of Steve's. Pick a free port.
+
+**Verifying the deck.** The swiftshader recipe above draws three.js but has
+no WebGPU, so a light-field embed renders black under it. Use puppeteer-core
+with `--headless=new --enable-unsafe-webgpu --use-angle=metal`, as
+light-field's `scripts/shoot.mjs` does. Puppeteer also lets you press keys,
+click into an embed and read `location.hash`, which is how paging is tested.
+Check the built folder too, not just dev: serve it with
+`python3 -m http.server --directory dist-deck`. The lab opens in its
+normals view, so press `8` before judging a lit shot. Running `npm install`
+in light-field rewrites its `package-lock.json`. Restore it with
+`git checkout`, or `build:deck` will rightly report the tree as dirty.
 
 ## Determinism
 
@@ -176,6 +195,8 @@ src/style.ts       palette — retune here to restyle everything
 src/stage.ts       renderer, 16:9 letterbox, the clock
 src/lines.ts       thick lines (THREE.Line is 1px and unusable)
 src/text.ts        in-canvas labels, so text survives export
+src/deck/          the light-field talk's deck (notes/deck.md)
+talk/slides.md     its slides
 src/lightfield/    a baked light field, imported as data from the light-field
                    repo: the bundle reader, the octahedral map, the peel, and
                    the shared unwrap scene the three light-field-* demos use
