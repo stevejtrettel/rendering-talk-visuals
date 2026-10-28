@@ -21,7 +21,17 @@ has its shape while the content is written.
 
 ---
 
+## Radiance
+
+![](demo:radiance-2d)
+
+---
+
 # The fixed point
+
+---
+
+![](demo:fixed-point)
 
 ---
 

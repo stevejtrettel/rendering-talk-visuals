@@ -63,7 +63,9 @@ export function createUI(stage: Stage, opts: UIOptions = {}): DemoUI {
   // A frozen-time URL (?t=) is only ever used to inspect or screenshot a
   // particular instant, so it starts with the panel out of the way — otherwise
   // every check shot has a control panel sitting over the right of the frame.
-  let hidden = new URLSearchParams(location.search).has('t');
+  // The deck embeds demos with ?embed, and wants them clean for the same reason.
+  const query = new URLSearchParams(location.search);
+  let hidden = query.has('t') || query.has('embed');
   if (hidden) gui.domElement.style.display = 'none';
 
   // --- toast ---------------------------------------------------------------

@@ -7,8 +7,12 @@
 
 import { allDemos } from './registry';
 
-const name = new URLSearchParams(location.search).get('d');
+const query = new URLSearchParams(location.search);
+const name = query.get('d');
 const errEl = document.getElementById('err') as HTMLPreElement;
+
+// Inside a deck slide (notes/deck.md) there is no gallery to go back to.
+if (query.has('embed')) document.querySelector<HTMLElement>('a.back')?.remove();
 
 function fail(msg: string) {
   errEl.style.display = 'grid';
