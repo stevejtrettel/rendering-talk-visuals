@@ -54,29 +54,12 @@ his approval. Audience and date: not yet given.*
   pixel integrates the spectrum against response curves (`ray-spectrum`,
   `material-measure`, `pixel-response`, `metamerism`). Placement open:
   Part 2, Part 5, or both.
-- **Decided: option A.** The talk tells the spectral story as the true
-  object and says plainly that the stored field is RGB, then talks through
-  the tradeoffs and the non-exactness of the model. light-field stays RGB.
-  The content:
-  - the true field is $L(p,\omega,\lambda)$, and the camera integrates it
-    against response curves;
-  - transport is diagonal in wavelength (no fluorescence), so the equation
-    decouples into $L_\lambda = E_\lambda + K_\lambda L_\lambda$; this is what
-    makes rendering in a few channels conceivable;
-  - RGB keeps three channels with three-number reflectances, which is exact
-    only if projection commuted with reflection's pointwise product, and
-    $P(\rho s) \ne P(\rho)P(s)$; the error grows with bounces ($\rho^n$)
-    and with saturation;
-  - so the approximation is made before transport, not at the camera;
-  - the tradeoff: a spectral field costs storage and bake time per
-    coefficient on top of an already large 4D field, and a small spectral
-    basis is not closed under multiplication either, so it reduces the error
-    without removing it.
+- **Decided: RGB is a light touch.** The spectrum is the true object and
+  the stored field is RGB; the talk says so briefly and does not develop it
+  (Steve: "even rgb isn't going to be a big deal"). light-field stays RGB.
   `light-field-spectra` draws reconstructed metamers for this reason.
 - **Not a theme: approximations.** Steve is not looking to dig into the
-  model's approximations in this talk. The RGB point above is the one that
-  is in; no broader accounting (geometric optics, discretization, Monte Carlo
-  noise).
+  model's approximations in this talk.
 - How much material: **decided, real materials** (general reflectance, not
   only diffuse), since Part 6 stores the general field.
 - The form of the equation: integral, operator, or both.
