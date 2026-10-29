@@ -25,8 +25,10 @@ his approval. Audience and date: not yet given.*
 6. **The idea.** Store an entire equilibrium light field (a fixed point of
    an enormous operator) on disk, call it up, and integrate it through a
    lens/camera model. That last integral is low-dimensional (2D or 4D), so
-   it is fast, and you can move around essentially in real time. Shown
-   piece by piece:
+   it is fast, and you can move around essentially in real time.
+   **The real story, for real materials:** the stored object is the full
+   field $L(p,\omega)$ on the direction bundle, not the diffuse special case
+   $L(p)$, which appears at most in passing. Shown piece by piece:
    - unrolling the objects (`light-field-unfold`);
    - storing the direction bundle over the surface as textures
      (`light-field-fibers`, `-forest`, `-atlas`, `-spectra`);
@@ -34,7 +36,9 @@ his approval. Audience and date: not yet given.*
      `unwrap-bake` page);
    - the integral that calls up pixels and reads their values into an image
      (`light-field-image`, `light-field-scan`);
-   - and then the real-time program (the room, the lab).
+   - and then the real-time program: light-field's `4d` page, which stores
+     $L(p,\omega)$ for glossy surfaces. The room stores the diffuse
+     collapse, so it must not stand in for the 4D claim.
 
 7. **Building it.** The challenges of designing this from a software
    perspective, and how AI helped (and did help) code it up, so that Steve
@@ -46,7 +50,8 @@ his approval. Audience and date: not yet given.*
 - How far down to start: Maxwell → rays (`wave-to-ray`,
   `notes/maxwell-to-spectra-memo.md`), or with radiance taken as given.
 - Spectral or RGB. The light-field bake stores RGB.
-- How much material: diffuse, glossy, mirror.
+- How much material: **decided, real materials** (general reflectance, not
+  only diffuse), since Part 6 stores the general field.
 - The form of the equation: integral, operator, or both.
 - Camera: pinhole, or thin lens (needed if focus/aperture return in Part 6).
 - Level of rigour.
@@ -62,10 +67,13 @@ image is $C(I-K)^{-1}E$. Path tracing brackets it from the camera's side;
 the stored field brackets it from the light's side. Path space has
 unbounded dimension; the camera integral over a stored field is at most 4D.
 
-**Part 6, how much storage theory.** Storage is shown in Part 6. Still open:
-whether it includes the storage-dimension argument (diffuse collapses to
-2D, exactly $N^2$ smaller; glossy stays 4D; mirrors are a Schur complement),
-or only the diffuse case.
+**Part 6, storage.** Decided: the general 4D field for real materials;
+the diffuse collapse at most in passing. The `light-field-*` demos already
+store full fibers everywhere (`COLLAPSE = false` in `light-field-forest`),
+and their glossy sphere's fibers genuinely vary. Still open: whether mirrors
+(a Schur complement, chartless) get mentioned. Deck sliders on the `4d` page
+need light-field's lab to publish `__lens` as the film page does (light-field
+docs/23).
 
 **The close.** Not yet discussed.
 
