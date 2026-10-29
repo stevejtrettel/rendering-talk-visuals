@@ -54,10 +54,24 @@ his approval. Audience and date: not yet given.*
   pixel integrates the spectrum against response curves (`ray-spectrum`,
   `material-measure`, `pixel-response`, `metamerism`). Placement open:
   Part 2, Part 5, or both.
-  **Honesty:** light-field transports RGB, not spectra. Reflection multiplies
-  spectra pointwise, and projecting to three numbers does not commute with
-  that product, so RGB rendering approximates *before* transport, not at the
-  camera. Say so wherever the stored field is claimed to be physical.
+- **Decided: option A.** The talk tells the spectral story as the true
+  object and says plainly that the stored field is RGB, then talks through
+  the tradeoffs and the non-exactness of the model. light-field stays RGB.
+  The content:
+  - the true field is $L(p,\omega,\lambda)$, and the camera integrates it
+    against response curves;
+  - transport is diagonal in wavelength (no fluorescence), so the equation
+    decouples into $L_\lambda = E_\lambda + K_\lambda L_\lambda$; this is what
+    makes rendering in a few channels conceivable;
+  - RGB keeps three channels with three-number reflectances, which is exact
+    only if projection commuted with reflection's pointwise product, and
+    $P(\rho s) \ne P(\rho)P(s)$; the error grows with bounces ($\rho^n$)
+    and with saturation;
+  - so the approximation is made before transport, not at the camera;
+  - the tradeoff: a spectral field costs storage and bake time per
+    coefficient on top of an already large 4D field, and a small spectral
+    basis is not closed under multiplication either, so it reduces the error
+    without removing it.
   `light-field-spectra` draws reconstructed metamers for this reason.
 - How much material: **decided, real materials** (general reflectance, not
   only diffuse), since Part 6 stores the general field.
