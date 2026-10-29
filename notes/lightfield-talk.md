@@ -73,6 +73,10 @@ his approval. Audience and date: not yet given.*
     basis is not closed under multiplication either, so it reduces the error
     without removing it.
   `light-field-spectra` draws reconstructed metamers for this reason.
+- **Not a theme: approximations.** Steve is not looking to dig into the
+  model's approximations in this talk. The RGB point above is the one that
+  is in; no broader accounting (geometric optics, discretization, Monte Carlo
+  noise).
 - How much material: **decided, real materials** (general reflectance, not
   only diffuse), since Part 6 stores the general field.
 - The form of the equation: integral, operator, or both.
