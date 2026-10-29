@@ -25,7 +25,16 @@ his approval. Audience and date: not yet given.*
 6. **The idea.** Store an entire equilibrium light field (a fixed point of
    an enormous operator) on disk, call it up, and integrate it through a
    lens/camera model. That last integral is low-dimensional (2D or 4D), so
-   it is fast, and you can move around essentially in real time.
+   it is fast, and you can move around essentially in real time. Shown
+   piece by piece:
+   - unrolling the objects (`light-field-unfold`);
+   - storing the direction bundle over the surface as textures
+     (`light-field-fibers`, `-forest`, `-atlas`, `-spectra`);
+   - running the computation (light-field's lab Neumann stepper, its
+     `unwrap-bake` page);
+   - the integral that calls up pixels and reads their values into an image
+     (`light-field-image`, `light-field-scan`);
+   - and then the real-time program (the room, the lab).
 
 7. **Building it.** The challenges of designing this from a software
    perspective, and how AI helped (and did help) code it up, so that Steve
@@ -53,9 +62,10 @@ image is $C(I-K)^{-1}E$. Path tracing brackets it from the camera's side;
 the stored field brackets it from the light's side. Path space has
 unbounded dimension; the camera integral over a stored field is at most 4D.
 
-**Where storage goes.** The storage-dimension story (diffuse collapses to
-2D, glossy stays 4D, mirrors are a Schur complement) fits in Part 6 or Part
-7. Not yet placed.
+**Part 6, how much storage theory.** Storage is shown in Part 6. Still open:
+whether it includes the storage-dimension argument (diffuse collapses to
+2D, exactly $N^2$ smaller; glossy stays 4D; mirrors are a Schur complement),
+or only the diffuse case.
 
 **The close.** Not yet discussed.
 
