@@ -49,7 +49,16 @@ his approval. Audience and date: not yet given.*
 **Part 2, the theory.**
 - How far down to start: Maxwell → rays (`wave-to-ray`,
   `notes/maxwell-to-spectra-memo.md`), or with radiance taken as given.
-- Spectral or RGB. The light-field bake stores RGB.
+- **Spectrum → RGB is in the talk** (Steve): what we do with a spectrum to
+  get to RGB or whatever. Natural home: the camera as a measurement, where a
+  pixel integrates the spectrum against response curves (`ray-spectrum`,
+  `material-measure`, `pixel-response`, `metamerism`). Placement open:
+  Part 2, Part 5, or both.
+  **Honesty:** light-field transports RGB, not spectra. Reflection multiplies
+  spectra pointwise, and projecting to three numbers does not commute with
+  that product, so RGB rendering approximates *before* transport, not at the
+  camera. Say so wherever the stored field is claimed to be physical.
+  `light-field-spectra` draws reconstructed metamers for this reason.
 - How much material: **decided, real materials** (general reflectance, not
   only diffuse), since Part 6 stores the general field.
 - The form of the equation: integral, operator, or both.
