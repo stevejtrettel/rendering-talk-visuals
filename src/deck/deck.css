@@ -1,29 +1,41 @@
 /*
- * The deck's look: the demos' black void and mineral palette (src/style.ts),
- * set in the STIX Two Text the in-canvas labels use. All sizes are in cqh/cqw
- * of the 16:9 frame, so a slide looks the same at any window size, and an
- * embed gets real pixels rather than a scaled bitmap (notes/deck.md, "Sizing").
+ * The deck's look: dark mode, a warm dark gray with slightly warm white type.
+ * Libertinus Sans for headings and controls, Libertinus Serif for the body,
+ * where it sits beside the math. Two accents, taken from the demos' palette
+ * (src/style.ts: ochre, blue) and lightened to read as text on gray:
+ * **strong** is amber, *emphasis* is blue. The demos keep their own black;
+ * on a gray slide they read as framed pictures.
+ *
+ * All sizes are in cqh/cqw of the 16:9 frame, so a slide looks the same at
+ * any window size, and an embed gets real pixels rather than a scaled bitmap
+ * (notes/deck.md, "Sizing"). The fonts are bundled from @fontsource, so the
+ * built deck never fetches one.
  */
 
-@font-face {
-  font-family: 'STIX Two Text';
-  src: url('../assets/stix-two-text-regular.woff') format('woff');
-}
+@import '@fontsource/libertinus-serif/400.css';
+@import '@fontsource/libertinus-serif/400-italic.css';
+@import '@fontsource/libertinus-serif/600.css';
+@import '@fontsource/libertinus-serif/600-italic.css';
+@import '@fontsource/libertinus-sans/400.css';
+@import '@fontsource/libertinus-sans/700.css';
 
 :root {
-  --bone: #d9d1c2;
-  --ash: #9a9287;
-  --slate: #7c8b96;
-  --slate-deep: #3d4750;
-  --ochre: #d4a63f;
-  --rust: #b2543a;
+  --bg: #1e1d1b;
+  --fg: #ece6da;
+  --muted: #9a948a;
+  --rule: #45423d;
+  --amber: #e2ad4f;
+  --blue: #8fb5d6;
+  --rust: #c8694d;
+  --serif: 'Libertinus Serif', serif;
+  --sans: 'Libertinus Sans', sans-serif;
 }
 
 html,
 body {
   margin: 0;
   height: 100%;
-  background: #000;
+  background: var(--bg);
   overflow: hidden;
 }
 
@@ -35,9 +47,9 @@ body {
   width: min(100vw, 100vh * 16 / 9);
   height: min(100vh, 100vw * 9 / 16);
   container-type: size;
-  color: var(--bone);
-  font-family: 'STIX Two Text', serif;
-  font-size: 4.4cqh;
+  color: var(--fg);
+  font-family: var(--serif);
+  font-size: 4.6cqh;
   line-height: 1.4;
 }
 
@@ -71,22 +83,22 @@ body {
 h1,
 h2,
 h3 {
-  font-weight: normal;
+  font-family: var(--sans);
+  font-weight: 400;
   line-height: 1.15;
 }
 h1 {
   font-size: 7.5cqh;
 }
 h2 {
-  font-size: 5.6cqh;
-  color: var(--slate);
+  font-size: 6cqh;
 }
 strong {
-  color: var(--ochre);
-  font-weight: normal;
+  color: var(--amber);
+  font-weight: 600;
 }
 em {
-  color: var(--bone);
+  color: var(--blue);
 }
 ul,
 ol {
@@ -96,10 +108,10 @@ li + li {
   margin-top: 1.2cqh;
 }
 a {
-  color: var(--slate);
+  color: var(--blue);
 }
 .katex {
-  font-size: 1.08em;
+  font-size: 1.05em;
 }
 .katex-display {
   margin: 0;
@@ -121,6 +133,11 @@ a {
 }
 .slide:has(> h1:first-child + h2:last-child) h1 {
   font-size: 11cqh;
+}
+.slide:has(> h1:first-child + h2:last-child) h2 {
+  font-family: var(--serif);
+  font-style: italic;
+  color: var(--muted);
 }
 
 /* An embed takes whatever room the rest of the slide leaves it. */
@@ -161,8 +178,10 @@ a {
   justify-content: center;
   gap: 6cqw;
   padding: 2.2cqh 0 2.6cqh;
+  font-family: var(--sans);
   font-size: 3cqh;
-  color: var(--slate);
+  color: var(--muted);
+  background: var(--bg);
 }
 .controls label {
   display: flex;
@@ -179,7 +198,7 @@ a {
 }
 .controls input[type='range']::-webkit-slider-runnable-track {
   height: 0.25cqh;
-  background: var(--slate-deep);
+  background: var(--rule);
 }
 .controls input[type='range']::-webkit-slider-thumb {
   -webkit-appearance: none;
@@ -187,7 +206,7 @@ a {
   height: 2.2cqh;
   margin-top: -0.975cqh;
   border-radius: 50%;
-  background: var(--bone);
+  background: var(--fg);
 }
 .controls input[type='range']:focus {
   outline: none;

@@ -54,8 +54,11 @@ the two files unchanged.
 The parser is `markdown-it` with raw HTML enabled, so anything the format
 cannot express can be written as HTML in place. Math is typeset by KaTeX at
 load time. Both are bundled, including KaTeX's fonts, so the deck never
-touches a CDN. Prose is set in the STIX Two Text already vendored for in-canvas
-labels, so slide text and demo labels share one typeface.
+touches a CDN. The look is dark mode: a warm dark gray, slightly warm white type,
+Libertinus Sans for headings and controls and Libertinus Serif for the body.
+Two accents come from the demos' palette, lightened for text on gray:
+amber for **strong** and blue for *emphasis*. The fonts are bundled from
+`@fontsource`, so the built deck never fetches one.
 
 **Sizing.** The slide is a 16:9 box letterboxed in the window, the same frame
 `stage.ts` gives a demo. Type is sized in container-query units (`cqh`), so the
