@@ -197,6 +197,11 @@ export const INFO: Record<string, DemoInfo> = {
       'A pulse from a point in a room of pillars, slabs, a slit and a concave wall, with the 2D wave equation stepped forward on a grid — shadows, diffraction, a caustic and reverberation all falling out of the one PDE. Switch the display to the time average and the oscillation integrates out into something that looks like a rendered image.',
     section: 'Modeling Light',
   },
+  'beam-spectrum': {
+    title: 'Along a Ray, a Spectrum',
+    blurb: "wave-to-ray's lamp and mirrors in the ray limit, and at a point on the beam the light arriving along that ray: a smooth curve for a sun-like lamp, spikes for neon. A spectrum is a positive measure on wavelengths.",
+    section: 'Modeling Light',
+  },
   'wave-to-ray': {
     title: 'Small Wavelength Limit',
     blurb: 'A Huygens–Kirchhoff wave field bouncing off two mirrors, with the wavelength shrinking until it collapses onto the ray paths drawn over it.',
