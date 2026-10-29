@@ -137,24 +137,12 @@ duration and an N-ramp, so the two exported videos are frame-synchronised —
 drop both into Keynote side by side and they stay in step, at full resolution
 each, with the option of showing either alone.
 
-## The deck
+## Embedding in a deck
 
-The light-field talk is an HTML deck in this repo. `notes/deck.md` explains
-why it is built this way.
-
-```bash
-npm run deck         # starts the dev server and opens the deck in the browser
-npm run build:deck   # dist-deck/: one static folder, serve with python3 -m http.server
-```
-
-Slides are `talk/slides.md`: Markdown and `$…$` math, a `---` line between
-slides, and embeds written as images: `![](demo:radiance-2d)`,
-`![](lightfield:lab)`, `![](media/hero.mp4)`. A blockquote (`> …`) is a
-placeholder note for a slide still to be made, drawn in pink. Light-field pages come from
-light-field's **built** `dist/` (`npm run build` there first; override with
-`LIGHTFIELD_DIST`), served in dev and copied by `build:deck`. Arrows and
-PageUp/PageDown page, even with focus inside an embed. Every other key goes
-to the embed.
+The light-field talk's HTML deck lives in its own repo, `~/Talks/light-fields`,
+and embeds this repo's **built** pages (`npm run build` → `dist/`).
+`demo.html?d=<name>&embed` loads a demo with its panel, key hint and back link
+hidden, which is how the deck shows it.
 
 ## Layout
 
@@ -175,9 +163,6 @@ src/capture.ts         stills and frame-stepped video
 src/ui.ts              lil-gui panel and keyboard shortcuts
 src/registry.ts        demo discovery + optional titles for the index page
 vite.config.ts         dev middleware that writes frames and runs ffmpeg
-deck.html, src/deck/    the talk deck: slide parsing, embeds, paging
-talk/slides.md         the deck's slides; talk/media/ holds its (git-ignored) videos
-scripts/build-deck.mjs the deck plus light-field's dist as one static folder
 ```
 
 ## Style

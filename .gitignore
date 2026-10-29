@@ -12,7 +12,3 @@ out/
 dist-pages
 demos/*/index.html
 demos/__pages
-
-# The deck (notes/deck.md): exporter output, and the built folder
-talk/media/
-dist-deck/
