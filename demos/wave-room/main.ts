@@ -250,6 +250,7 @@ const STEP_FRAG = /* glsl */ `
   uniform float uDrive;   // the source's time profile, this step
   uniform vec2 uSrcAxis;  // a line source's facing direction
   uniform float uSrcWaist; // its Gaussian half-width across the beam; 0 = a point
+  uniform float uZeroAcc; // 1 on the step the time average starts from
 
   varying vec2 vUv;
 
@@ -259,7 +260,7 @@ const STEP_FRAG = /* glsl */ `
     ivec2 c = ivec2(gl_FragCoord.xy);
     ivec2 hi = ivec2(uSize) - 1;
     vec4 s = texelFetch(uState, c, 0);
-    float acc = s.b;
+    float acc = s.b * (1.0 - uZeroAcc);
 
     vec2 p = mix(uMin, uMax, vUv);
     // A wall cell is pinned to zero, every step. Its neighbours then read the
@@ -311,6 +312,8 @@ const DISPLAY_FRAG = /* glsl */ `
   uniform vec2 uMin;
   uniform vec2 uMax;
   uniform int uMode;       // 0 = field, 1 = time average
+  uniform float uMix;     // 0 = field, 1 = time average, between = a crossfade
+  uniform float uAvgGain;
   uniform float uGain;
   uniform float uSteps;
   uniform vec3 uWarm;
@@ -357,12 +360,12 @@ const DISPLAY_FRAG = /* glsl */ `
     vec4 s = sampleState(p);
 
     vec3 col;
+    // The time average of u-squared: what a detector sitting in the room for
+    // the whole run would report, which is the quantity the rest of the deck
+    // calls brightness.
+    vec3 avg = rampCol(pow(s.b / max(uSteps, 1.0) * uAvgGain, 0.5));
     if (uMode == 1) {
-      // The time average of u-squared: what a detector sitting in the room for
-      // the whole run would report, which is the quantity the rest of the deck
-      // calls brightness.
-      float I = s.b / max(uSteps, 1.0) * uGain;
-      col = rampCol(pow(I, 0.5));
+      col = avg;
     } else {
       // The field itself, signed — the thing being solved for. The shoulder is
       // soft rather than a clamp: near the source the amplitude is a couple of
@@ -371,6 +374,7 @@ const DISPLAY_FRAG = /* glsl */ `
       float a = s.r * uGain;
       float m = 1.0 - exp(-abs(a));
       col = (a > 0.0 ? uWarm : uCool) * m;
+      col = mix(col, avg, uMix);
     }
 
     // The walls, straight off the same SDF: a lit rim on the surface falling to
@@ -408,6 +412,15 @@ const BEAM = new URLSearchParams(location.search).get('scene') === 'beam';
 const SCENE_DEFINES: Record<string, string> = BEAM ? { BEAM: '' } : {};
 const BEAM_AXIS = new THREE.Vector2(Math.cos((-24 * Math.PI) / 180), Math.sin((-24 * Math.PI) / 180));
 const BEAM_WAIST = 0.42;
+/**
+ * The beam scene ends on the steady state (Steve, 2026-10-29: focus on the
+ * steady state of the wave equation): once the room has settled, the picture
+ * crossfades from the oscillating field to its time average, the brightness,
+ * averaged from AVG_FROM on so the switch-on transient is left out. That
+ * brightness is what wave-to-ray, the next slide, computes directly.
+ */
+const AVG_FROM = 8;
+const CROSSFADE = [12, 15];
 
 const simScene = new THREE.Scene();
 const simCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -425,6 +438,7 @@ const simMat = new THREE.ShaderMaterial({
     uDrive: { value: 0 },
     uSrcAxis: { value: new THREE.Vector2(1, 0) },
     uSrcWaist: { value: 0 },
+    uZeroAcc: { value: 0 },
   },
   defines: SCENE_DEFINES,
   vertexShader: QUAD_VERT,
@@ -444,6 +458,8 @@ const displayMat = new THREE.ShaderMaterial({
     uMin: { value: new THREE.Vector2(-HALF_W, -ORTHO_H) },
     uMax: { value: new THREE.Vector2(HALF_W, ORTHO_H) },
     uMode: { value: 0 },
+    uMix: { value: 0 },
+    uAvgGain: { value: 1 },
     uGain: { value: 1 },
     uSteps: { value: 1 },
     uWarm: { value: new THREE.Color(C.ochre) },
@@ -535,6 +551,8 @@ ui.params.add(params, 'marker').name('source marker');
 // ---------------------------------------------------------------------------
 
 let stepsDone = 0;
+/** The step the time average starts from: AVG_FROM in the beam scene, else the start. */
+let accFrom = 0;
 let signature = '';
 let dx = (2 * HALF_W) / gridW;
 let dt = (COURANT * dx) / SPEED;
@@ -587,6 +605,7 @@ function stepOnce(n: number, omega: number): void {
   const tau = (n + 1) * dt;
   simMat.uniforms.uState.value = read.texture;
   simMat.uniforms.uDrive.value = drive(tau, omega, params.source);
+  simMat.uniforms.uZeroAcc.value = n === accFrom ? 1 : 0;
   stage.renderer.setRenderTarget(write);
   stage.renderer.render(simScene, simCam);
   const swap = read;
@@ -617,6 +636,7 @@ stage.frame((t) => {
     dt = (COURANT * dx) / SPEED;
     resetSim();
   }
+  accFrom = BEAM ? Math.round(AVG_FROM / dt) : 0;
 
   const omega = (2 * Math.PI * SPEED) / params.wavelength;
   simMat.uniforms.uSize.value.set(gridW, gridH);
@@ -644,7 +664,11 @@ stage.frame((t) => {
   uni.uState.value = read.texture;
   uni.uSize.value.set(gridW, gridH);
   uni.uMode.value = params.display === 'time average' ? 1 : 0;
-  uni.uSteps.value = Math.max(1, stepsDone);
+  uni.uSteps.value = Math.max(1, stepsDone - accFrom);
+  const tLoop = t % stage.duration;
+  uni.uMix.value = BEAM && stepsDone > accFrom ? THREE.MathUtils.smoothstep(tLoop, CROSSFADE[0]!, CROSSFADE[1]!) : 0;
+  // The beam scene's steady state is bright (a driven beam, nothing decaying): a quarter of the gain.
+  uni.uAvgGain.value = params.exposure * AVG_GAIN * (BEAM ? 0.25 : 1);
   // The front spreads as 1/√r and the room is damped, so by the end the field
   // is a small fraction of what it started as and a fixed exposure shows a
   // black room. `auto gain` pushes back against both — √τ for the spreading,
