@@ -143,13 +143,14 @@ The light-field talk is an HTML deck in this repo. `notes/deck.md` explains
 why it is built this way.
 
 ```bash
-npm run dev          # http://localhost:5173/deck.html#1
+npm run deck         # starts the dev server and opens the deck in the browser
 npm run build:deck   # dist-deck/: one static folder, serve with python3 -m http.server
 ```
 
 Slides are `talk/slides.md`: Markdown and `$…$` math, a `---` line between
 slides, and embeds written as images: `![](demo:radiance-2d)`,
-`![](lightfield:lab)`, `![](media/hero.mp4)`. Light-field pages come from
+`![](lightfield:lab)`, `![](media/hero.mp4)`. A blockquote (`> …`) is a
+placeholder note for a slide still to be made, drawn in pink. Light-field pages come from
 light-field's **built** `dist/` (`npm run build` there first; override with
 `LIGHTFIELD_DIST`), served in dev and copied by `build:deck`. Arrows and
 PageUp/PageDown page, even with focus inside an embed. Every other key goes

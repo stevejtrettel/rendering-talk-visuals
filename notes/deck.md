@@ -48,6 +48,9 @@ the two files unchanged.
   A heading plus an embed puts the heading above the embed and gives the
   embed the remaining space. Everything else is a text slide. CSS `:has()`
   makes these choices, so there is no layout syntax to learn or forget.
+- A blockquote (`> …`) is a placeholder: a note, in the author's words,
+  about a slide still to be made. It is drawn in pink, like the to-build
+  notes in Steve's Keynote outline.
 - Lines after a line reading `Note:` are speaker notes. They are parsed and
   kept out of the slide. A presenter view that shows them comes later.
 

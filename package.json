@@ -9,7 +9,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "video": "node scripts/encode.mjs",
-    "build:deck": "node scripts/build-deck.mjs"
+    "build:deck": "node scripts/build-deck.mjs",
+    "deck": "vite --open /deck.html"
   },
   "devDependencies": {
     "@types/markdown-it": "^14.2.0",

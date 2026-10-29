@@ -211,3 +211,37 @@ a {
 .controls input[type='range']:focus {
   outline: none;
 }
+
+/* --- placeholders ------------------------------------------------------------ */
+
+/* A blockquote is a note about a slide still to be made: what goes here,
+   in the author's words. Pink, like the to-build notes in Steve's Keynote
+   outline, and smaller than slide text so a paragraph of it fits. */
+blockquote {
+  margin: 0;
+  max-width: 62cqw;
+  padding-left: 2.4cqw;
+  border-left: 0.4cqh solid #d0458f;
+  color: #e070ad;
+  font-family: var(--sans);
+  font-size: 3.8cqh;
+  line-height: 1.35;
+}
+blockquote p + p {
+  margin-top: 2cqh;
+}
+blockquote p {
+  margin: 0;
+}
+/* A slide that is only a note sits in the middle, like the outline's. */
+.slide:has(> blockquote:only-child) {
+  justify-content: center;
+  align-items: center;
+}
+/* A title with a note under it: laid out like the title slide. */
+.slide:has(> h1:first-child + blockquote:last-child) {
+  justify-content: center;
+}
+.slide:has(> h1:first-child + blockquote:last-child) h1 {
+  font-size: 12.5cqh;
+}
