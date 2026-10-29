@@ -87,6 +87,7 @@
 
 import * as THREE from 'three';
 import { createStage, createUI, C } from '@';
+import { label } from '@/text';
 
 const ORTHO_H = 3;
 const HALF_W = (ORTHO_H * 16) / 9;
@@ -250,7 +251,7 @@ const STEP_FRAG = /* glsl */ `
   uniform float uDrive;   // the source's time profile, this step
   uniform vec2 uSrcAxis;  // a line source's facing direction
   uniform float uSrcWaist; // its Gaussian half-width across the beam; 0 = a point
-  uniform float uZeroAcc; // 1 on the step the time average starts from
+  uniform float uEma;     // 0: b accumulates u-squared; > 0: b is a running average with this weight per step
 
   varying vec2 vUv;
 
@@ -260,7 +261,7 @@ const STEP_FRAG = /* glsl */ `
     ivec2 c = ivec2(gl_FragCoord.xy);
     ivec2 hi = ivec2(uSize) - 1;
     vec4 s = texelFetch(uState, c, 0);
-    float acc = s.b * (1.0 - uZeroAcc);
+    float acc = s.b;
 
     vec2 p = mix(uMin, uMax, vUv);
     // A wall cell is pinned to zero, every step. Its neighbours then read the
@@ -299,7 +300,7 @@ const STEP_FRAG = /* glsl */ `
       un += uDrive * exp(-(r * r) / (2.0 * uSrcSigma * uSrcSigma));
     }
 
-    fragColor = vec4(un, u, acc + un * un, 1.0);
+    fragColor = vec4(un, u, uEma > 0.0 ? mix(acc, un * un, uEma) : acc + un * un, 1.0);
   }
 `;
 
@@ -413,14 +414,17 @@ const SCENE_DEFINES: Record<string, string> = BEAM ? { BEAM: '' } : {};
 const BEAM_AXIS = new THREE.Vector2(Math.cos((-24 * Math.PI) / 180), Math.sin((-24 * Math.PI) / 180));
 const BEAM_WAIST = 0.42;
 /**
- * The beam scene ends on the steady state (Steve, 2026-10-29: focus on the
- * steady state of the wave equation): once the room has settled, the picture
- * crossfades from the oscillating field to its time average, the brightness,
- * averaged from AVG_FROM on so the switch-on transient is left out. That
- * brightness is what wave-to-ray, the next slide, computes directly.
+ * The beam scene has a `view` toggle (Steve, 2026-10-29): the electric field
+ * itself, oscillating, or its brightness, the time average of its square,
+ * which is what an eye or a camera records and what wave-to-ray, the next
+ * slide, computes directly; a label in the frame says which. In the steady
+ * state the brightness stands still while the field goes on oscillating
+ * under it. The average is a running one over the last AVG_WINDOW seconds,
+ * so it is the light now, from any moment the toggle is pressed; switching
+ * crossfades over SWITCH seconds.
  */
-const AVG_FROM = 8;
-const CROSSFADE = [12, 15];
+const AVG_WINDOW = 1.0;
+const SWITCH = 0.6;
 
 const simScene = new THREE.Scene();
 const simCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -438,7 +442,7 @@ const simMat = new THREE.ShaderMaterial({
     uDrive: { value: 0 },
     uSrcAxis: { value: new THREE.Vector2(1, 0) },
     uSrcWaist: { value: 0 },
-    uZeroAcc: { value: 0 },
+    uEma: { value: 0 },
   },
   defines: SCENE_DEFINES,
   vertexShader: QUAD_VERT,
@@ -534,7 +538,10 @@ const params = {
   autoGain: true,
   grid: 640,
   marker: !BEAM,
+  view: 'wave' as 'wave' | 'brightness',
 };
+let viewMix = 0;
+let lastFrameT = 0;
 ui.params.add(params, 'source', ['pulse', 'train', 'continuous']).name('source');
 ui.params.add(params, 'wavelength', 0.15, 0.9, 0.01).name('wavelength');
 ui.params.add(params, 'amplitude', 0.1, 4, 0.05).name('amplitude');
@@ -546,13 +553,24 @@ ui.params.add(params, 'exposure', 0.05, 8, 0.05).name('exposure');
 ui.params.add(params, 'autoGain').name('auto gain');
 ui.params.add(params, 'grid', GRIDS).name('grid width');
 ui.params.add(params, 'marker').name('source marker');
+if (BEAM) ui.params.add(params, 'view', ['wave', 'brightness']);
+
+// What is being plotted, in the frame (beam scene only).
+const viewLabel = (text: string) => {
+  const l = label(text, { size: 0.22, color: C.bone, anchorX: 'right', anchorY: 'bottom', position: [4.95, -2.62, 1] });
+  l.outlineWidth = '14%';
+  l.outlineColor = 0x000000;
+  l.visible = BEAM;
+  stage.add(l);
+  return l;
+};
+const fieldLabel = viewLabel('electric field');
+const brightLabel = viewLabel('brightness (time average)');
 // ---------------------------------------------------------------------------
 // Marching
 // ---------------------------------------------------------------------------
 
 let stepsDone = 0;
-/** The step the time average starts from: AVG_FROM in the beam scene, else the start. */
-let accFrom = 0;
 let signature = '';
 let dx = (2 * HALF_W) / gridW;
 let dt = (COURANT * dx) / SPEED;
@@ -605,7 +623,6 @@ function stepOnce(n: number, omega: number): void {
   const tau = (n + 1) * dt;
   simMat.uniforms.uState.value = read.texture;
   simMat.uniforms.uDrive.value = drive(tau, omega, params.source);
-  simMat.uniforms.uZeroAcc.value = n === accFrom ? 1 : 0;
   stage.renderer.setRenderTarget(write);
   stage.renderer.render(simScene, simCam);
   const swap = read;
@@ -636,7 +653,7 @@ stage.frame((t) => {
     dt = (COURANT * dx) / SPEED;
     resetSim();
   }
-  accFrom = BEAM ? Math.round(AVG_FROM / dt) : 0;
+  simMat.uniforms.uEma.value = BEAM ? Math.min(1, dt / AVG_WINDOW) : 0;
 
   const omega = (2 * Math.PI * SPEED) / params.wavelength;
   simMat.uniforms.uSize.value.set(gridW, gridH);
@@ -664,9 +681,20 @@ stage.frame((t) => {
   uni.uState.value = read.texture;
   uni.uSize.value.set(gridW, gridH);
   uni.uMode.value = params.display === 'time average' ? 1 : 0;
-  uni.uSteps.value = Math.max(1, stepsDone - accFrom);
-  const tLoop = t % stage.duration;
-  uni.uMix.value = BEAM && stepsDone > accFrom ? THREE.MathUtils.smoothstep(tLoop, CROSSFADE[0]!, CROSSFADE[1]!) : 0;
+  uni.uSteps.value = BEAM ? 1 : Math.max(1, stepsDone); // the running average is already a mean
+  // The toggle crossfades: toward its target at 1 / SWITCH per second of stage time.
+  const want = params.view === 'brightness' ? 1 : 0;
+  const step = Math.max(0, t - lastFrameT) / SWITCH;
+  lastFrameT = t;
+  viewMix = want > viewMix ? Math.min(want, viewMix + step) : Math.max(want, viewMix - step);
+  if (!BEAM) viewMix = 0;
+  uni.uMix.value = THREE.MathUtils.smoothstep(viewMix, 0, 1);
+  // troika fades by fillOpacity / outlineOpacity, not the material's opacity.
+  for (const [l, o] of [[fieldLabel, 1 - uni.uMix.value], [brightLabel, uni.uMix.value]] as const) {
+    l.fillOpacity = o;
+    l.outlineOpacity = o;
+    l.visible = BEAM && o > 0.01;
+  }
   // The beam scene's steady state is bright (a driven beam, nothing decaying): a quarter of the gain.
   uni.uAvgGain.value = params.exposure * AVG_GAIN * (BEAM ? 0.25 : 1);
   // The front spreads as 1/√r and the room is damped, so by the end the field
