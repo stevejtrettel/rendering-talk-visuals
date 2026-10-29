@@ -20,10 +20,10 @@
 @import '@fontsource/libertinus-sans/700.css';
 
 :root {
-  --bg: #1e1d1b;
+  --bg: #161514;
   --fg: #ece6da;
   --muted: #9a948a;
-  --rule: #45423d;
+  --rule: #3d3a35;
   --amber: #e2ad4f;
   --blue: #8fb5d6;
   --rust: #c8694d;
@@ -49,7 +49,7 @@ body {
   container-type: size;
   color: var(--fg);
   font-family: var(--serif);
-  font-size: 4.6cqh;
+  font-size: 5.4cqh;
   line-height: 1.4;
 }
 
@@ -88,10 +88,10 @@ h3 {
   line-height: 1.15;
 }
 h1 {
-  font-size: 7.5cqh;
+  font-size: 8.6cqh;
 }
 h2 {
-  font-size: 6cqh;
+  font-size: 7cqh;
 }
 strong {
   color: var(--amber);
@@ -124,7 +124,7 @@ a {
   justify-content: center;
 }
 .slide:has(> h1:only-child) h1 {
-  font-size: 11cqh;
+  font-size: 12.5cqh;
 }
 
 /* A heading followed by a subtitle: the title slide. */
@@ -132,7 +132,7 @@ a {
   justify-content: center;
 }
 .slide:has(> h1:first-child + h2:last-child) h1 {
-  font-size: 11cqh;
+  font-size: 12.5cqh;
 }
 .slide:has(> h1:first-child + h2:last-child) h2 {
   font-family: var(--serif);
@@ -179,7 +179,7 @@ a {
   gap: 6cqw;
   padding: 2.2cqh 0 2.6cqh;
   font-family: var(--sans);
-  font-size: 3cqh;
+  font-size: 3.6cqh;
   color: var(--muted);
   background: var(--bg);
 }

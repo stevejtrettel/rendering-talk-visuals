@@ -54,7 +54,7 @@ the two files unchanged.
 The parser is `markdown-it` with raw HTML enabled, so anything the format
 cannot express can be written as HTML in place. Math is typeset by KaTeX at
 load time. Both are bundled, including KaTeX's fonts, so the deck never
-touches a CDN. The look is dark mode: a warm dark gray, slightly warm white type,
+touches a CDN. The look is dark mode: a warm near-black gray, slightly warm white type,
 Libertinus Sans for headings and controls and Libertinus Serif for the body.
 Two accents come from the demos' palette, lightened for text on gray:
 amber for **strong** and blue for *emphasis*. The fonts are bundled from
