@@ -11,6 +11,13 @@ beautiful, but coding it is going to be super annoying (for different
 meshes, etc.), so AI coding lets me focus on the math and make something
 awesome.
 
+## The parts, as Steve has named them
+
+1. Traditional Rendering
+2. The Mathematics of Photography
+3. A Crazy Idea
+4. Implementing this
+
 ## The arc, as Steve has laid it out
 
 1. Start with examples of beautiful path-traced images, both Steve's and from
