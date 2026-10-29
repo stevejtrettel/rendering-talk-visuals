@@ -4,23 +4,26 @@
  * The room of the slides before (wave-room ?scene=beam, wave-to-ray
  * ?frame=room, beam-spectrum): the lamp in its housing, the flat mirror, the
  * concave one; now with walls that reflect, in colour (left red, right green,
- * floor and ceiling white), and a white disc that stands in part of the light
- * and casts a shadow (Steve, 2026-10-29). The probe is a ray: a point and a
- * direction, the arrow pointing the way the light travels. The graph is the
- * spectrum of the light travelling along that ray. Drag the dot to move the
- * point, the arrowhead to turn it (the `direction` slider turns it too).
+ * floor and ceiling white) (Steve, 2026-10-29). The room is coloured by the
+ * light in it: at every point, the light arriving from all directions, in its
+ * colour, so the beam and the lit walls show and the colour bleeds.
+ *
+ * The probe is a point with a dial round it and an arrow out of it: the arrow
+ * is a direction, pointing the way the light travels. The graph is the spectrum
+ * of the light travelling through the point in that direction. Drag the arrow
+ * to turn it, the point to move it (the `direction` slider turns it too).
  *
  * What is computed, honestly: the equilibrium light in the room, in the ray
  * limit, spectrally, by Monte Carlo from the lamp (light tracing). PHOTONS
  * paths leave the lamp with the sun's spectrum, reflect off the mirrors
- * (MIRROR_R at every wavelength), and at the walls and the disc deposit their
+ * (MIRROR_R at every wavelength), and at the walls deposit their
  * power into the irradiance of that piece of surface and bounce on diffusely,
  * multiplied by the surface's reflectance (Russian roulette on its mean). The
  * diffuse surfaces are Lambertian, so the light leaving one is the same in
  * every direction: its reflectance times its irradiance, over 2 in 2D.
  *
  * The probe reads it back exactly as a light field is read: follow the ray
- * backwards to the surface it left. Off a wall or the disc, that surface's
+ * backwards to the surface it left. Off a wall, that surface's
  * outgoing light; off a mirror, the light arriving at the mirror from the
  * reflected direction, times MIRROR_R, followed on; out of the lamp, the lamp's
  * emission in that direction (a beam: a Gaussian across the opening and in
@@ -30,7 +33,12 @@
  * so looking at the walls compares them; the lamp and the mirrors' views of it
  * are far brighter and run off the top (marked). Walls are drawn in the colour
  * and brightness of the light leaving them (the light field on the boundary),
- * exposure set by the brightest wall. Colours through the CIE observer
+ * exposure set by the brightest wall. The room's colouring is the scalar
+ * fluence of the same light tracing (each photon's track length in a cell,
+ * times its power, in XYZ), lightly blurred against Monte Carlo grain, and
+ * tone-mapped 1 - exp(-s) about a typical lit level: a readability choice,
+ * which lets the dim bounced light show beside the far brighter beam.
+ * Colours through the CIE observer
  * (response.ts), clamped past 670 nm where its analytic tails fail.
  */
 
@@ -119,9 +127,6 @@ const segs: Seg[] = [];
 const ROOM_HALF = v(5.25, 2.88);
 const ROOM_R = 0.55;
 const SOURCE = { center: v(-4.55, 1.75), axis: fromAngle(-24), waist: 0.42, sigma: (4 * Math.PI) / 180 };
-// In the light coming back off the concave mirror, clear of the beam going out:
-// its shadow falls on the red wall.
-const DISC = { c: v(-3.35, 2.05), r: 0.32 };
 
 /** Add a diffuse polyline, split into bins of about BIN long, normal toward `inward` side. */
 const BIN = 0.12;
@@ -164,13 +169,6 @@ function addDiffuse(a: Vec, b: Vec, albedo: Float64Array, n: Vec): void {
     s.n = n;
   }
 }
-// The disc: white, normals outward.
-for (let k = 0; k < 40; k++) {
-  const a = add(DISC.c, fromAngle((360 * k) / 40), DISC.r);
-  const b = add(DISC.c, fromAngle((360 * (k + 1)) / 40), DISC.r);
-  const n = unit(sub(add(a, sub(b, a), 0.5), DISC.c));
-  segs.push({ a, b, kind: 'diffuse', n, albedo: WHITE, bin: bins++ });
-}
 // The mirrors (both sides) and the housing (black).
 const FLAT = { mid: v(1.29, -0.85), dir: fromAngle(18), half: 1.15 };
 segs.push({ a: add(FLAT.mid, FLAT.dir, -FLAT.half), b: add(FLAT.mid, FLAT.dir, FLAT.half), kind: 'mirror', n: perp(FLAT.dir), bin: -1 });
@@ -209,8 +207,34 @@ function hit(o: Vec, d: Vec, skip: Seg | null): { t: number; s: Seg; p: Vec } | 
   return best;
 }
 
-// --- Light tracing: the equilibrium irradiance on every diffuse surface ---------------
-const PHOTONS = 40000;
+// --- Light tracing: the equilibrium irradiance on every diffuse surface, and the
+// fluence in the room (for colouring it) -------------------------------------------
+const GW = 336;
+const GH = 184;
+const CELL = (2 * ROOM_HALF.x) / GW;
+const FLUENCE = new Float64Array(GW * GH * 3); // XYZ
+const toXYZw = (w: Float64Array): [number, number, number] => {
+  const xyz: [number, number, number] = [0, 0, 0];
+  for (let i = 0; i < NS; i++) CMF.forEach((f, c) => (xyz[c] += f(Math.min(nmAt(i), 670)) * w[i]!));
+  return xyz;
+};
+/** Add a photon's track from a to b, power xyz, into the fluence grid. */
+function track(a: Vec, b: Vec, xyz: [number, number, number]): void {
+  const len = Math.hypot(b.x - a.x, b.y - a.y);
+  const n = Math.max(1, Math.ceil(len / (CELL * 0.6)));
+  const step = len / n;
+  for (let k = 0; k < n; k++) {
+    const p = add(a, sub(b, a), (k + 0.5) / n);
+    const gx = Math.floor((p.x + ROOM_HALF.x) / CELL);
+    const gy = Math.floor((p.y + ROOM_HALF.y) / CELL);
+    if (gx < 0 || gy < 0 || gx >= GW || gy >= GH) continue;
+    const o = (gy * GW + gx) * 3;
+    FLUENCE[o]! += xyz[0] * step;
+    FLUENCE[o + 1]! += xyz[1] * step;
+    FLUENCE[o + 2]! += xyz[2] * step;
+  }
+}
+const PHOTONS = 60000;
 const E = new Float64Array(bins * NS); // irradiance, power per length, per wavelength
 let seed = 0x1234567;
 const rand = () => {
@@ -232,7 +256,9 @@ const gauss = () => Math.sqrt(-2 * Math.log(1 - rand())) * Math.cos(2 * Math.PI 
     let skip: Seg | null = null;
     for (let bounce = 0; bounce < 40; bounce++) {
       const h = hit(o, d, skip);
-      if (!h || h.s.kind === 'black') break;
+      if (!h) break;
+      track(o, h.p, toXYZw(w));
+      if (h.s.kind === 'black') break;
       if (h.s.kind === 'mirror') {
         for (let i = 0; i < NS; i++) w[i]! *= MIRROR_R;
         d = reflect(d, h.s.n);
@@ -338,45 +364,81 @@ const L_REF = (() => {
   lineIn(arcPts, C.slate, 5);
   lineIn(HOUSING, C.slate, 5);
 }
-// The beam, faint, in the lamp's colour: rays from the opening to wherever they stop.
+// The room, coloured by the light in it: the fluence image, tone-mapped.
 {
-  const [X, Y, Z] = toXYZ(SUN);
-  const col = xyzToHex(X / Y, 1, Z / Y);
-  for (let k = 0; k < 21; k++) {
-    let o = add(SOURCE.center, N, ((k / 20) * 2 - 1) * 0.85 * SOURCE.waist);
-    let d = A;
-    const pts = [o];
-    let skip: Seg | null = null;
-    for (let i = 0; i < 4; i++) {
-      const h = hit(o, d, skip);
-      if (!h) break;
-      pts.push(h.p);
-      if (h.s.kind !== 'mirror') break;
-      d = reflect(d, h.s.n);
-      o = h.p;
-      skip = h.s;
+  // Blur twice, 3 x 3, against Monte Carlo grain.
+  let f = FLUENCE;
+  for (let pass = 0; pass < 2; pass++) {
+    const g = new Float64Array(f.length);
+    for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) for (let c = 0; c < 3; c++) {
+      let sum = 0;
+      let n = 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const xx = x + dx;
+        const yy = y + dy;
+        if (xx < 0 || yy < 0 || xx >= GW || yy >= GH) continue;
+        sum += f[(yy * GW + xx) * 3 + c]!;
+        n++;
+      }
+      g[(y * GW + x) * 3 + c] = sum / n;
     }
-    room.add(polyline(pts.map((p) => [p.x, p.y, 0.005] as [number, number, number]), { color: col, width: 2, opacity: 0.35 }));
+    f = g;
   }
+  // The exposure: the 90th percentile of the lit cells (inside the beam the
+  // light is far brighter, and saturates; the bounced light sits low and dark).
+  const Ys: number[] = [];
+  for (let i = 0; i < GW * GH; i++) if (f[i * 3 + 1]! > 0) Ys.push(f[i * 3 + 1]!);
+  Ys.sort((a, b) => a - b);
+  const Yref = Ys[Math.floor(Ys.length * 0.9)]! * 1.2;
+  const data = new Uint8Array(GW * GH * 4);
+  const hx = ROOM_HALF.x - ROOM_R;
+  const hy = ROOM_HALF.y - ROOM_R;
+  for (let y = 0; y < GH; y++) {
+    for (let x = 0; x < GW; x++) {
+      const i = y * GW + x;
+      const px = -ROOM_HALF.x + (x + 0.5) * CELL;
+      const py = -ROOM_HALF.y + (y + 0.5) * CELL;
+      const qx = Math.max(Math.abs(px) - hx, 0);
+      const qy = Math.max(Math.abs(py) - hy, 0);
+      const inRoom = Math.hypot(qx, qy) < ROOM_R;
+      const Y = f[i * 3 + 1]! / Yref;
+      const k = Y > 0 ? (1 - Math.exp(-Y)) / Y / Yref : 0;
+      const hex = xyzToHex(f[i * 3]! * k, f[i * 3 + 1]! * k, f[i * 3 + 2]! * k);
+      data[i * 4] = (hex >> 16) & 255;
+      data[i * 4 + 1] = (hex >> 8) & 255;
+      data[i * 4 + 2] = hex & 255;
+      data[i * 4 + 3] = inRoom ? 255 : 0;
+    }
+  }
+  const tex = new THREE.DataTexture(data, GW, GH, THREE.RGBAFormat);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearFilter;
+  tex.needsUpdate = true;
+  const image = new THREE.Mesh(new THREE.PlaneGeometry(2 * ROOM_HALF.x, 2 * ROOM_HALF.y), new THREE.MeshBasicMaterial({ map: tex, transparent: true, toneMapped: false }));
+  image.position.z = -0.02;
+  room.add(image);
 }
 
-// The probe: a dot, an arrow, and the ray followed back to where its light left.
+// The probe: a point, a dial round it, and an arrow out of it.
 const params = { direction: 20 };
 let probe = v(-2.4, -1.15);
-const probeDot = new THREE.Mesh(new THREE.CircleGeometry(0.11, 24), flat(C.bone));
+const DIAL = 0.42;
+const ARROW = 1.0;
+const probeDot = new THREE.Mesh(new THREE.CircleGeometry(0.09, 24), flat(C.bone));
+const dial = polyline(Array.from({ length: 49 }, () => [0, 0, 0] as [number, number, number]), { color: C.bone, width: 3 });
 const arrowShaft = polyline([[0, 0, 0], [0, 0, 0]], { color: C.bone, width: 5 });
 const arrowHead = new THREE.Mesh(
   (() => {
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute([0, 0.22, 0, -0.13, -0.05, 0, 0.13, -0.05, 0], 3));
+    g.setAttribute('position', new THREE.Float32BufferAttribute([0, 0.26, 0, -0.15, -0.05, 0, 0.15, -0.05, 0], 3));
     return g;
   })(),
   flat(C.bone),
 );
-const backLine = polyline(Array.from({ length: 16 }, () => [0, 0, 0] as [number, number, number]), { color: C.ochre, width: 3, opacity: 0.85 });
 probeDot.position.z = arrowHead.position.z = 0.03;
-room.add(backLine, arrowShaft, arrowHead, probeDot);
-const ARROW = 1.0;
+room.add(dial, arrowShaft, arrowHead, probeDot);
+
 
 // --- The graph ---------------------------------------------------------------------
 const G = { x0: 2.0, x1: 5.05, y0: -1.05, y1: 1.35 };
@@ -415,15 +477,16 @@ function update(): void {
   const w = fromAngle(params.direction);
   const path: Vec[] = [];
   lightAlong(probe, w, L, path);
-  // The ray: the arrow at the probe, and the way back to where the light left.
+  // The point, its dial and the arrow.
   probeDot.position.set(probe.x, probe.y, 0.03);
   const tip = add(probe, w, ARROW);
   setPolyline(arrowShaft, [[probe.x, probe.y, 0.02], [tip.x, tip.y, 0.02]]);
   arrowHead.position.set(tip.x, tip.y, 0.03);
   arrowHead.rotation.z = Math.atan2(w.y, w.x) - Math.PI / 2;
-  const pts = path.map((p) => [p.x, p.y, 0.015] as [number, number, number]);
-  while (pts.length < 16) pts.push(pts[pts.length - 1]!);
-  setPolyline(backLine, pts.slice(0, 16));
+  setPolyline(dial, Array.from({ length: 49 }, (_, k) => {
+    const q = add(probe, fromAngle((360 * k) / 48), DIAL);
+    return [q.x, q.y, 0.02] as [number, number, number];
+  }));
   // The graph.
   const pos = fillGeom.attributes.position as THREE.BufferAttribute;
   let over = false;
@@ -455,19 +518,23 @@ const toRoom = (e: PointerEvent): Vec => {
 };
 const inside = (p: Vec) => Math.abs(p.x) < ROOM_HALF.x - 0.15 && Math.abs(p.y) < ROOM_HALF.y - 0.15;
 let grab: 'point' | 'tip' | null = null;
+/** The arrow (its tip, or anywhere on the dial) turns it; the middle moves it. */
+function nearWhat(p: Vec): 'point' | 'tip' | null {
+  const tip = add(probe, fromAngle(params.direction), ARROW);
+  const r = Math.hypot(p.x - probe.x, p.y - probe.y);
+  if (Math.hypot(p.x - tip.x, p.y - tip.y) < 0.35 || Math.abs(r - DIAL) < 0.14) return 'tip';
+  if (r < DIAL - 0.14) return 'point';
+  return null;
+}
 canvas.addEventListener('pointerdown', (e) => {
   const p = toRoom(e);
-  const tip = add(probe, fromAngle(params.direction), ARROW);
-  if (Math.hypot(p.x - tip.x, p.y - tip.y) < 0.35) grab = 'tip';
-  else if (Math.hypot(p.x - probe.x, p.y - probe.y) < 0.35) grab = 'point';
+  grab = nearWhat(p);
   if (grab) canvas.setPointerCapture(e.pointerId);
 });
 canvas.addEventListener('pointermove', (e) => {
   const p = toRoom(e);
   if (!grab) {
-    const tip = add(probe, fromAngle(params.direction), ARROW);
-    const near = Math.hypot(p.x - tip.x, p.y - tip.y) < 0.35 || Math.hypot(p.x - probe.x, p.y - probe.y) < 0.35;
-    canvas.style.cursor = near ? 'grab' : '';
+    canvas.style.cursor = nearWhat(p) ? 'grab' : '';
     return;
   }
   if (grab === 'point' && inside(p)) probe = p;
