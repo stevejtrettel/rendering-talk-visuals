@@ -108,7 +108,7 @@ const stage = createStage({
 // reflections start to pile up into a diffuse field. Run it much longer and
 // every frame after is the same featureless speckle — true, and not worth
 // footage.
-stage.duration = 14;
+stage.duration = new URLSearchParams(location.search).get('scene') === 'beam' ? 20 : 14; // the beam scene takes longer to fill the room
 
 const ui = createUI(stage);
 
@@ -157,6 +157,20 @@ const SDF = /* glsl */ `
 
   /** Negative in the air the wave lives in, positive in the walls. */
   float air(vec2 p) {
+#ifdef BEAM
+    // wave-to-ray's scene, in a room: the lamp in its housing, the flat
+    // mirror, the concave one, all at that demo's coordinates.
+    float d = sdRoundBox(p, vec2(5.25, 2.88), 0.55);
+    vec2 A = vec2(cos(radians(-24.0)), sin(radians(-24.0)));
+    vec2 N = vec2(-A.y, A.x);
+    vec2 q = vec2(dot(p - vec2(-4.55, 1.75), A), dot(p - vec2(-4.55, 1.75), N));
+    d = max(d, -sdBox(q - vec2(-0.3, 0.0), vec2(0.04, 0.99)));
+    d = max(d, -sdBox(q - vec2(-0.08, 0.95), vec2(0.26, 0.04)));
+    d = max(d, -sdBox(q - vec2(-0.08, -0.95), vec2(0.26, 0.04)));
+    d = max(d, -sdBox(rot(p - vec2(1.29, -0.85), radians(18.0)), vec2(1.15, 0.05)));
+    d = max(d, -sdArc(p, vec2(-0.104, 0.135), 3.4, 0.05, vec2(cos(radians(30.0)), sin(radians(30.0))), cos(radians(17.0))));
+    return d;
+#else
     float d = sdRoundBox(p, vec2(5.05, 2.72), 0.55);
 
     // The divider, with its slit.
@@ -170,6 +184,7 @@ const SDF = /* glsl */ `
     d = max(d, -sdArc(p, vec2(-0.9, 0.35), 3.4, 0.1, vec2(1.0, 0.0), cos(0.55)));
 
     return d;
+#endif
   }
 `;
 
@@ -233,6 +248,8 @@ const STEP_FRAG = /* glsl */ `
   uniform vec2 uSrcPos;
   uniform float uSrcSigma;
   uniform float uDrive;   // the source's time profile, this step
+  uniform vec2 uSrcAxis;  // a line source's facing direction
+  uniform float uSrcWaist; // its Gaussian half-width across the beam; 0 = a point
 
   varying vec2 vUv;
 
@@ -268,8 +285,18 @@ const STEP_FRAG = /* glsl */ `
     // A soft (additive) source, so it drives the field without also acting as a
     // scatterer. Gaussian over a few cells: a single-cell source would radiate
     // the grid's own corner frequencies as much as the wave's.
-    float r = length(p - uSrcPos);
-    un += uDrive * exp(-(r * r) / (2.0 * uSrcSigma * uSrcSigma));
+    if (uSrcWaist > 0.0) {
+      // A Gaussian-tapered line across the beam, all in phase: it launches a
+      // beam along uSrcAxis (and back into the housing, which returns it).
+      vec2 rel = p - uSrcPos;
+      float across = dot(rel, uSrcAxis);
+      float along = dot(rel, vec2(-uSrcAxis.y, uSrcAxis.x));
+      un += uDrive * (uSrcSigma / uSrcWaist) * exp(-(across * across) / (2.0 * uSrcSigma * uSrcSigma))
+        * exp(-(along * along) / (2.0 * uSrcWaist * uSrcWaist));
+    } else {
+      float r = length(p - uSrcPos);
+      un += uDrive * exp(-(r * r) / (2.0 * uSrcSigma * uSrcSigma));
+    }
 
     fragColor = vec4(un, u, acc + un * un, 1.0);
   }
@@ -368,6 +395,20 @@ const DISPLAY_FRAG = /* glsl */ `
   }
 `;
 
+/**
+ * `?scene=beam`: wave-to-ray's geometry, so this slide and that one show the
+ * same scene (Steve, 2026-10-29): a lamp in a housing, open on one side, sends
+ * a continuous beam at a flat mirror and then the concave one, all inside a
+ * closed room, so after the mirrors the light keeps bouncing round the room.
+ * The lamp is a Gaussian-tapered line of in-phase sources across the opening
+ * (wave-to-ray's aperture, SOURCE there), so what leaves it is a beam; the
+ * default scene keeps its point source.
+ */
+const BEAM = new URLSearchParams(location.search).get('scene') === 'beam';
+const SCENE_DEFINES: Record<string, string> = BEAM ? { BEAM: '' } : {};
+const BEAM_AXIS = new THREE.Vector2(Math.cos((-24 * Math.PI) / 180), Math.sin((-24 * Math.PI) / 180));
+const BEAM_WAIST = 0.42;
+
 const simScene = new THREE.Scene();
 const simCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 const simMat = new THREE.ShaderMaterial({
@@ -382,7 +423,10 @@ const simMat = new THREE.ShaderMaterial({
     uSrcPos: { value: new THREE.Vector2() },
     uSrcSigma: { value: 0.05 },
     uDrive: { value: 0 },
+    uSrcAxis: { value: new THREE.Vector2(1, 0) },
+    uSrcWaist: { value: 0 },
   },
+  defines: SCENE_DEFINES,
   vertexShader: QUAD_VERT,
   fragmentShader: STEP_FRAG,
 });
@@ -411,6 +455,7 @@ const displayMat = new THREE.ShaderMaterial({
     uSrcPos: { value: new THREE.Vector2() },
     uShowSrc: { value: 1 },
   },
+  defines: SCENE_DEFINES,
   vertexShader: QUAD_VERT,
   fragmentShader: DISPLAY_FRAG,
 });
@@ -458,20 +503,21 @@ stage.add(screen);
 // ---------------------------------------------------------------------------
 
 const params = {
-  source: 'pulse' as 'pulse' | 'train' | 'continuous',
+  source: (BEAM ? 'continuous' : 'pulse') as 'pulse' | 'train' | 'continuous',
   wavelength: 0.32,
   amplitude: 1.0,
   // Per second, so it halves alongside SPEED: the loss the wave takes per
   // bounce is what the picture reads, and that should not change when the
   // whole thing is slowed down.
   damping: 0.12,
-  sourceX: -1.85,
-  sourceY: -0.9,
+  // In the beam scene, the lamp sits just in front of the back of its housing.
+  sourceX: BEAM ? -4.55 - 0.12 * BEAM_AXIS.x : -1.85,
+  sourceY: BEAM ? 1.75 - 0.12 * BEAM_AXIS.y : -0.9,
   display: 'field' as 'field' | 'time average',
-  exposure: 0.5,
+  exposure: BEAM ? 1.2 : 0.5, // a driven beam is not compensated by auto gain (see the frame callback)
   autoGain: true,
   grid: 640,
-  marker: true,
+  marker: !BEAM,
 };
 ui.params.add(params, 'source', ['pulse', 'train', 'continuous']).name('source');
 ui.params.add(params, 'wavelength', 0.15, 0.9, 0.01).name('wavelength');
@@ -576,6 +622,8 @@ stage.frame((t) => {
   simMat.uniforms.uSize.value.set(gridW, gridH);
   simMat.uniforms.uDamp.value = params.damping * dt;
   simMat.uniforms.uSrcPos.value.set(params.sourceX, params.sourceY);
+  simMat.uniforms.uSrcAxis.value.copy(BEAM_AXIS);
+  simMat.uniforms.uSrcWaist.value = BEAM ? BEAM_WAIST : 0;
   // Band-limit the source to well under a wavelength, so what leaves it is the
   // wave and not the grid.
   simMat.uniforms.uSrcSigma.value = Math.max(1.5 * dx, params.wavelength / 6);
