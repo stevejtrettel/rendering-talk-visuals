@@ -197,6 +197,11 @@ export const INFO: Record<string, DemoInfo> = {
       'A pulse from a point in a room of pillars, slabs, a slit and a concave wall, with the 2D wave equation stepped forward on a grid — shadows, diffraction, a caustic and reverberation all falling out of the one PDE. Switch the display to the time average and the oscillation integrates out into something that looks like a rendered image.',
     section: 'Modeling Light',
   },
+  'light-field-room': {
+    title: 'A Spectrum on Every Ray',
+    blurb: "The beam room with coloured walls and a disc, its equilibrium light computed by light tracing (spectral, in the ray limit). Drag a probe ray anywhere and the graph shows the spectrum travelling along it, read back from the surface it left.",
+    section: 'Modeling Light',
+  },
   'beam-spectrum': {
     title: 'Along a Ray, a Spectrum',
     blurb: "wave-to-ray's lamp and mirrors in the ray limit, and at a point on the beam the light arriving along that ray: a smooth curve for a sun-like lamp, spikes for neon. A spectrum is a positive measure on wavelengths.",
