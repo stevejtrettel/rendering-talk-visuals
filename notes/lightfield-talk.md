@@ -18,6 +18,10 @@ awesome.
 3. A Crazy Idea
 4. Implementing this
 
+The general idea (Steve confirmed): arc steps 1–4 below are Traditional
+Rendering; step 5 is The Mathematics of Photography; step 6 is A Crazy Idea;
+step 7 is Implementing this.
+
 ## The arc, as Steve has laid it out
 
 1. Start with examples of beautiful path-traced images, both Steve's and from
