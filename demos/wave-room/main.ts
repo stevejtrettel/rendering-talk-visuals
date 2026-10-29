@@ -170,6 +170,8 @@ const SDF = /* glsl */ `
     d = max(d, -sdBox(q - vec2(-0.08, -0.95), vec2(0.26, 0.04)));
     d = max(d, -sdBox(rot(p - vec2(1.29, -0.85), radians(18.0)), vec2(1.15, 0.05)));
     d = max(d, -sdArc(p, vec2(-0.104, 0.135), 3.4, 0.05, vec2(cos(radians(30.0)), sin(radians(30.0))), cos(radians(17.0))));
+    // The disc every slide of this run carries (see wave-to-ray, DISC).
+    d = max(d, -sdDisc(p, vec2(-2.3, 2.42), 0.3));
     return d;
 #else
     float d = sdRoundBox(p, vec2(5.05, 2.72), 0.55);

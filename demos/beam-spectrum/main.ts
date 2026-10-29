@@ -76,6 +76,8 @@ const SOURCE = { center: v(-4.55, 1.75), axis: fromAngle(-24), waist: 0.42 };
 const ROOM_HALF = v(5.25, 2.88);
 const ROOM_R = 0.55;
 const FLAT = { mid: v(1.29, -0.85), dir: fromAngle(18), half: 1.15 };
+/** The disc every slide of this run carries (see wave-to-ray, DISC). */
+const DISC = { c: v(-2.3, 2.42), r: 0.3 };
 const ARC = { c: v(-0.104, 0.135), r: 3.4, a0: (13 * Math.PI) / 180, a1: (47 * Math.PI) / 180 };
 
 const inRoom = (pts: Vec[]) => pts.map((p) => [p.x, p.y, 0] as [number, number, number]);
@@ -113,6 +115,7 @@ const line = (pts: Vec[], color: number, width: number, opacity = 1) => {
   const N = perp(A);
   const at = (x: number, y: number) => add(add(SOURCE.center, A, x), N, y);
   line([at(0.18, 0.95), at(-0.3, 0.95), at(-0.3, -0.95), at(0.18, -0.95)], C.slate, 5);
+  line(Array.from({ length: 41 }, (_, k) => add(DISC.c, fromAngle((360 * k) / 40), DISC.r)), C.slate, 5);
 }
 
 // --- The rays ------------------------------------------------------------------
@@ -159,6 +162,16 @@ function trace(start: Vec): Vec[] {
   let skip = -1;
   for (let i = 0; i < 4; i++) {
     const h = hit(o, d, skip);
+    // The disc (see wave-to-ray, DISC): rays that reach it stop there.
+    const ox = o.x - DISC.c.x;
+    const oy = o.y - DISC.c.y;
+    const b = ox * d.x + oy * d.y;
+    const dd = b * b - (ox * ox + oy * oy - DISC.r * DISC.r);
+    const tc = dd >= 0 ? -b - Math.sqrt(dd) : -1;
+    if (tc > 1e-4 && (!h || tc < h.t)) {
+      pts.push(add(o, d, tc));
+      break;
+    }
     if (!h) {
       const tx = d.x > 1e-9 ? (ROOM_HALF.x - o.x) / d.x : d.x < -1e-9 ? (-ROOM_HALF.x - o.x) / d.x : 1e9;
       const ty = d.y > 1e-9 ? (ROOM_HALF.y - o.y) / d.y : d.y < -1e-9 ? (-ROOM_HALF.y - o.y) / d.y : 1e9;

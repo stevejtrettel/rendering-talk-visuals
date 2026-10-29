@@ -119,9 +119,9 @@ const segs: Seg[] = [];
 const ROOM_HALF = v(5.25, 2.88);
 const ROOM_R = 0.55;
 const SOURCE = { center: v(-4.55, 1.75), axis: fromAngle(-24), waist: 0.42, sigma: (4 * Math.PI) / 180 };
-// In the light coming back off the concave mirror, clear of the beam going out:
-// its shadow falls on the red wall.
-const DISC = { c: v(-3.35, 2.05), r: 0.32 };
+// The disc every slide of this run carries (see wave-to-ray, DISC): off to the
+// side, clipping the top of the light coming back off the concave mirror.
+const DISC = { c: v(-2.3, 2.42), r: 0.3 };
 
 /** Add a diffuse polyline, split into bins of about BIN long, normal toward `inward` side. */
 const BIN = 0.12;
