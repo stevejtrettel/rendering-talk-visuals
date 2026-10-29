@@ -1,103 +1,46 @@
 # The light-field talk: narrative
 
-*Hour-long talk; slides in `talk/slides.md`, deck design in `notes/deck.md`.
-This file records the arc as Steve has laid it out. Nothing enters it without
-his approval. Audience and date: not yet given.*
+*Hour-long talk. This file records only what Steve has said about it, in his
+words where possible. Nothing else goes in without his say-so.*
 
-## The rule
+## The arc, as Steve has laid it out
 
-Steve: "I want to say true things." The talk does not dig into
-approximations, but what it says should be true.
+1. Start with examples of beautiful path-traced images, both Steve's and from
+   movies. No cold open.
 
-## The arc
+2. Then talk about the theory of realistic image rendering ("lots of
+   decisions we need to make here").
 
-1. **Beautiful path-traced images.** Steve's own and from films. No cold
-   open.
+3. Eventually write down a basic unidirectional path tracer (not derived
+   rigorously) and see how it converges.
 
-2. **The theory of realistic image rendering.** Many decisions to make here
-   (see below).
+4. Then the downsides: you want to move the camera a little bit and the image
+   needs to be rebuilt from scratch. But we can think through the theory of
+   this mathematically and try to understand another, crazier method to make
+   an image.
 
-3. **A basic unidirectional path tracer.** Written down, not derived
-   rigorously, and then watched as it converges.
+5. Then back up and introduce the whole picture from the beginning: light
+   fields, realistic light fields, cameras, etc.
 
-4. **The cost.** Move the camera a little and the image has to be rebuilt
-   from scratch. Thinking this through mathematically leads to another,
-   crazier way to make an image.
+6. Then we reach the idea: store an entire equilibrium light field, a fixed
+   point of some enormous operator, on disk; then call it up and integrate it
+   via a lens/camera model to produce a real-time image. This last integral is
+   fast (only 2D or 4D or so), so we can essentially move around in real time.
+   Show all the bits and pieces: unrolling objects, storing the tangent bundle
+   on the surface as textures, running the computation, etc.; then running an
+   integral over this, calling up pixels and reading their values to
+   contribute to an image; and then we have our real-time program.
 
-5. **Back to the beginning: the whole picture.** Light fields; realistic
-   light fields; cameras.
+7. Then talk a bit about the challenges of designing such a thing from a
+   software perspective, and how AI can help (and did help) code it up, so
+   that Steve could focus on the mathematical bits and the understanding of
+   the story.
 
-6. **The idea.** Store an entire equilibrium light field (a fixed point of
-   an enormous operator) on disk, call it up, and integrate it through a
-   lens/camera model. That last integral is low-dimensional (2D or 4D), so
-   it is fast, and you can move around essentially in real time.
-   **The real story, for real materials:** the stored object is the full
-   field $L(p,\omega)$ on the direction bundle, not the diffuse special case
-   $L(p)$, which appears at most in passing. Shown piece by piece:
-   - unrolling the objects (`light-field-unfold`);
-   - storing the direction bundle over the surface as textures
-     (`light-field-fibers`, `-forest`, `-atlas`, `-spectra`);
-   - running the computation (light-field's lab Neumann stepper, its
-     `unwrap-bake` page);
-   - the integral that calls up pixels and reads their values into an image
-     (`light-field-image`, `light-field-scan`);
-   - and then the real-time program: light-field's `4d` page, which stores
-     $L(p,\omega)$ for glossy surfaces. The room stores the diffuse
-     collapse, so it must not stand in for the 4D claim.
+## What Steve has said beyond the arc
 
-7. **Building it.** The challenges of designing this from a software
-   perspective, and how AI helped (and did help) code it up, so that Steve
-   could focus on the mathematics and on understanding the story.
-
-## Open decisions
-
-**Part 2, the theory.**
-- How far down to start: Maxwell → rays (`wave-to-ray`,
-  `notes/maxwell-to-spectra-memo.md`), or with radiance taken as given.
-- **Spectrum → RGB is in the talk** (Steve): what we do with a spectrum to
-  get to RGB or whatever. Natural home: the camera as a measurement, where a
-  pixel integrates the spectrum against response curves (`ray-spectrum`,
-  `material-measure`, `pixel-response`, `metamerism`). Placement open:
-  Part 2, Part 5, or both.
-- **Decided: RGB is a light touch.** The spectrum is the true object and
-  the stored field is RGB; the talk says so briefly and does not develop it
-  (Steve: "even rgb isn't going to be a big deal"). light-field stays RGB.
-  `light-field-spectra` draws reconstructed metamers for this reason.
-- **Not a theme: approximations.** Steve is not looking to dig into the
-  model's approximations in this talk.
-- How much material: **decided, real materials** (general reflectance, not
-  only diffuse), since Part 6 stores the general field.
-- The form of the equation: integral, operator, or both.
-- Camera: pinhole, or thin lens (needed if focus/aperture return in Part 6).
-- Level of rigour.
-
-**Splitting Parts 2 and 5.** Both introduce the theory. A possible split
-(proposed, not agreed): Part 2 local, as practitioners tell it (one pixel,
-an integral over paths, random walks); Part 5 global (the field on all rays
-as one object, transport as an operator, realistic fields as its fixed
-points, the camera as a linear measurement).
-
-**Parts 4 → 6, the turn.** Candidate framing (proposed, not agreed): the
-image is $C(I-K)^{-1}E$. Path tracing brackets it from the camera's side;
-the stored field brackets it from the light's side. Path space has
-unbounded dimension; the camera integral over a stored field is at most 4D.
-
-**Part 6, storage.** Decided: the general 4D field for real materials;
-the diffuse collapse at most in passing. The `light-field-*` demos already
-store full fibers everywhere (`COLLAPSE = false` in `light-field-forest`),
-and their glossy sphere's fibers genuinely vary. Still open: whether mirrors
-(a Schur complement, chartless) get mentioned. Deck sliders on the `4d` page
-need light-field's lab to publish `__lens` as the film page does (light-field
-docs/23).
-
-**The close.** Not yet discussed.
-
-## Live material already available
-
-- Path tracing converging, and restarting when the camera moves: the lab in
-  reference mode (key `9`).
-- The stored field, steady under camera motion: the lab in lit mode (`8`),
-  the room with deck sliders for aperture and focus.
-- 2D theory demos in this repo: `radiance-2d`, `radiance-boundary`,
-  `fixed-point`, `bounce-series`, `path-space`, `pixel-lens`, the
-  `monte-carlo-*` and `riemann-*` demos, and the `light-field-*` demos.
+- The real story for real materials, not (mostly) the special diffuse case.
+- Include what we do with a spectrum to get to RGB or whatever.
+- Go with "A": tell the spectral story, and say that what is stored is RGB.
+  But even RGB isn't going to be a big deal.
+- Not looking to dig into approximations in this talk.
+- "I want to say true things."
