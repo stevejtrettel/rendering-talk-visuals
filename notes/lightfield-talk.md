@@ -63,3 +63,17 @@ step 7 is Implementing this.
   But even RGB isn't going to be a big deal.
 - Not looking to dig into approximations in this talk.
 - "I want to say true things."
+
+## Part 1: Traditional Rendering
+
+- Theory will be light.
+- The audience should walk away knowing that we have a many-bounce
+  path-traced imaging system that bounces paths around, records things at
+  intersections and seeks out lights, then adds up the contributions of many
+  paths.
+- We don't talk about it as Monte Carlo yet or anything; we just describe
+  what the CS people do.
+- But we do describe the slow convergence: we need to sample lots of paths
+  to get all the ways light could have bounced around a scene. And the paths
+  we need totally change once we move the camera (since that's their
+  origin), so it's slow.
