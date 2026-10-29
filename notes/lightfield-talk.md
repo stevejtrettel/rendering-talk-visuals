@@ -3,6 +3,14 @@
 *Hour-long talk. This file records only what Steve has said about it, in his
 words where possible. Nothing else goes in without his say-so.*
 
+## The point of the talk, in Steve's words
+
+There's a really cool thing I'd like to do in computer graphics that gets
+around an obvious difficulty with other methods. The math of it is
+beautiful, but coding it is going to be super annoying (for different
+meshes, etc.), so AI coding lets me focus on the math and make something
+awesome.
+
 ## The arc, as Steve has laid it out
 
 1. Start with examples of beautiful path-traced images, both Steve's and from
