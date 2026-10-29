@@ -267,10 +267,53 @@ function drawMirror(m: Mirror): void {
   stage.add(face);
 }
 
-MIRRORS.forEach(drawMirror);
+/**
+ * `?frame=room` draws the scene the way wave-room's beam scene does (Steve,
+ * 2026-10-29: the same box, things drawn the same): a rounded room round it,
+ * thin mirrors, the lamp in its housing, and the field black outside the room.
+ * The computation is unchanged. It is open space, which is a room whose walls
+ * are perfectly black: light reaching them is absorbed, nothing comes back, and
+ * the rays stop there. (In wave-room the walls reflect.)
+ */
+const ROOM = new URLSearchParams(location.search).get('frame') === 'room';
+const ROOM_HALF = v(5.25, 2.88);
+const ROOM_R = 0.55;
+
+if (ROOM) {
+  const line = (pts: Vec[], width: number) => {
+    const l = polyline(pts.map((p) => [p.x, p.y, 0] as [number, number, number]), { color: C.slate, width });
+    l.renderOrder = 7;
+    stage.add(l);
+  };
+  // The room: a rounded rectangle.
+  const outline: Vec[] = [];
+  const corners: [number, number, number][] = [
+    [ROOM_HALF.x - ROOM_R, ROOM_HALF.y - ROOM_R, 0],
+    [-(ROOM_HALF.x - ROOM_R), ROOM_HALF.y - ROOM_R, 90],
+    [-(ROOM_HALF.x - ROOM_R), -(ROOM_HALF.y - ROOM_R), 180],
+    [ROOM_HALF.x - ROOM_R, -(ROOM_HALF.y - ROOM_R), 270],
+  ];
+  for (const [cx, cy, a0] of corners) {
+    for (let k = 0; k <= 8; k++) {
+      const a = ((a0 + (90 * k) / 8) * Math.PI) / 180;
+      outline.push(v(cx + ROOM_R * Math.cos(a), cy + ROOM_R * Math.sin(a)));
+    }
+  }
+  outline.push(outline[0]);
+  line(outline, 5);
+  // The mirrors, thin.
+  for (const m of MIRRORS) line(mirrorPoly(m, 40), 6);
+  // The lamp's housing, at wave-room's coordinates: a back plate and two sides.
+  const A = SOURCE.axis;
+  const N = perp(A);
+  const at = (x: number, y: number) => add(add(SOURCE.center, A, x), N, y);
+  line([at(0.18, 0.95), at(-0.3, 0.95), at(-0.3, -0.95), at(0.18, -0.95)], 6);
+} else {
+  MIRRORS.forEach(drawMirror);
+}
 
 // The aperture itself, drawn as two jaws with the slit between them.
-{
+if (!ROOM) {
   const t = perp(SOURCE.axis);
   const a = add(SOURCE.center, t, SOURCE.halfLen);
   const b = add(SOURCE.center, t, -SOURCE.halfLen);
@@ -320,6 +363,7 @@ const FIELD_FRAG = /* glsl */ `
   uniform float uExposure;
   uniform float uPhase;
   uniform int uMode;   // 0 = intensity, 1 = signed field
+  uniform float uRoom; // 1: black outside the room (frame=room)
   uniform int uSS;     // supersamples per axis
   uniform vec2 uTexel; // world size of one output pixel
   uniform vec4 uBlock[8];
@@ -385,6 +429,13 @@ const FIELD_FRAG = /* glsl */ `
   void main() {
     vec2 p0 = mix(uMin, uMax, vUv);
     float n = float(uSS);
+    if (uRoom > 0.5) {
+      vec2 q = abs(p0) - vec2(${ROOM_HALF.x - ROOM_R}, ${ROOM_HALF.y - ROOM_R});
+      if (length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) > ${ROOM_R}) {
+        fragColor = vec4(0.0, 0.0, 0.0, 1.0);
+        return;
+      }
+    }
 
     if (uMode == 1) {
       // The field is linear, so averaging it over the pixel is the right filter.
@@ -429,6 +480,7 @@ const fieldMat = new THREE.ShaderMaterial({
     uExposure: { value: 1 },
     uPhase: { value: 0 },
     uMode: { value: 0 },
+    uRoom: { value: ROOM ? 1 : 0 },
     uSS: { value: 2 },
     uTexel: { value: new THREE.Vector2() },
     uBlock: {
@@ -743,8 +795,11 @@ function traceRay(start: Vec, dir: Vec, out: [number, number, number][]): void {
     const hit = hitMirror(o, d, skip);
     if (!hit || i === RAY_POINTS - 1) {
       // Run out to the edge of the frame.
-      const tx = d.x > 1e-9 ? (HALF_W - o.x) / d.x : d.x < -1e-9 ? (-HALF_W - o.x) / d.x : 1e9;
-      const ty = d.y > 1e-9 ? (ORTHO_H - o.y) / d.y : d.y < -1e-9 ? (-ORTHO_H - o.y) / d.y : 1e9;
+      // To the edge of the frame, or to the room's (black) walls.
+      const hx = ROOM ? ROOM_HALF.x : HALF_W;
+      const hy = ROOM ? ROOM_HALF.y : ORTHO_H;
+      const tx = d.x > 1e-9 ? (hx - o.x) / d.x : d.x < -1e-9 ? (-hx - o.x) / d.x : 1e9;
+      const ty = d.y > 1e-9 ? (hy - o.y) / d.y : d.y < -1e-9 ? (-hy - o.y) / d.y : 1e9;
       const t = Math.max(0, Math.min(tx, ty));
       const e = add(o, d, t);
       out[i] = [e.x, e.y, 0];
