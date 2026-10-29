@@ -14,11 +14,12 @@
  * sideways as the rows appear: each row's brightness, its amplitude squared.
  *
  * Right: the scene of the slides before (wave-room ?scene=beam, wave-to-ray
- * ?frame=room) in the ray limit. Once the decomposition is done, a bar slides
- * down the spectrum, and the rays take the colour of the wavelength under it,
- * at its brightness: one frequency's steady state at a time, the same rays for
- * every wavelength (the mirrors treat them alike). The `wavelength` slider
- * moves the bar by hand.
+ * ?frame=room) in the ray limit. A bar rides the decomposition front, and as
+ * each row appears the rays take that wavelength's colour, at its brightness:
+ * one frequency's steady state at a time, the same rays for every wavelength
+ * (the mirrors treat them alike). When the spectrum is complete the rays settle
+ * to the colour of all of it together. The `wavelength` slider moves the bar
+ * by hand.
  *
  * `lamp`: a 5800 K blackbody (sun: a smooth curve, a measure with a density),
  * or neon's emission lines (spikes, a measure with no density; line positions
@@ -47,7 +48,7 @@ const stage = createStage({
   lights: false,
   controls: false,
 });
-stage.duration = 24;
+stage.duration = 21;
 const ui = createUI(stage);
 
 /** The room, drawn at this scale and centre; the graph sits to its right. */
@@ -225,6 +226,16 @@ const rowsOf = (lamp: Lamp): [number, number][] =>
 const brightnessAt = (lamp: Lamp, nm: number) =>
   lamp === 'sun' ? sunAt(nm) : NEON.reduce((m, [l, h]) => (Math.abs(l - nm) < 1.2 ? Math.max(m, h) : m), 0);
 
+const smoothStep = (u: number) => u * u * (3 - 2 * u);
+/** The colour of the lamp's whole spectrum, through the observer. */
+function mixColour(lamp: Lamp): number {
+  const xyz = [0, 0, 0];
+  const add3 = (nm: number, h: number) => CMF.forEach((f, c) => (xyz[c]! += f(Math.min(nm, 670)) * h));
+  if (lamp === 'neon') for (const [nm, h] of NEON) add3(nm, h);
+  else for (let nm = WL0; nm <= WL1; nm += 2) add3(nm, sunAt(nm));
+  const m = Math.max(...xyz) || 1;
+  return xyzToHex(xyz[0]! / m, xyz[1]! / m, xyz[2]! / m);
+}
 function nmColour(nm: number): number {
   // Clamped: the analytic CIE fit's tails are poor past ~680 nm, where its x
   // and y fall off together and deep red would come out yellow.
@@ -291,7 +302,10 @@ const bar = polyline([[L.x0, 0, 0.05], [SPEC.x1 + 0.1, 0, 0.05]], { color: C.bon
 stage.add(bar);
 
 // --- Timeline and controls ------------------------------------------------------------
-const T = { decompose: [1.2, 9.5], sweep: [10.5, 21.5] };
+// One pass: the decomposition front is the bar, and the rays follow it live
+// (Steve, 2026-10-29: change the rays' colour as the spectrum is drawn, not
+// after). Then the rays settle to the colour of the whole spectrum.
+const T = { decompose: [1.2, 16.0], settle: [16.5, 18.0] };
 const ramp = (t: number, [a, b]: number[]) => Math.min(1, Math.max(0, (t - a!) / (b! - a!)));
 const smooth = (u: number) => u * u * (3 - 2 * u);
 
@@ -341,19 +355,20 @@ stage.frame((t) => {
     setPolyline(stems[k]!, [[SPEC.x0, yOf(nm), 0], [SPEC.x0 + h * (SPEC.x1 - SPEC.x0), yOf(nm), 0]]);
   });
 
-  // The bar: swept down the spectrum once the decomposition is done, or by hand.
-  const sweeping = t >= T.sweep[0]!;
-  const nm = manual ? params.wavelength : WL0 + (WL1 - WL0) * ramp(t, T.sweep);
-  bar.visible = manual || sweeping;
+  // The bar rides the decomposition front (or the slider, by hand), and the
+  // rays take the wavelength under it, at its brightness, live.
+  const decomposing = t >= T.decompose[0]! && t < T.decompose[1]!;
+  const nm = manual ? params.wavelength : front;
+  bar.visible = manual || decomposing;
   setPolyline(bar, [[L.x0, yOf(nm), 0.05], [SPEC.x1 + 0.1, yOf(nm), 0.05]]);
-
-  // The rays: faint while decomposing; then the wavelength under the bar, at its brightness.
-  const on = manual || sweeping;
-  const b = on ? brightnessAt(lamp, nm) : 0;
-  const colour = on ? nmColour(nm) : 0x888888;
+  const settle = manual ? 0 : smoothStep(ramp(t, T.settle));
+  const one = new THREE.Color(manual || decomposing ? nmColour(nm) : 0x888888);
+  const all = new THREE.Color(mixColour(lamp));
+  const colour = one.lerp(all, settle);
+  const b = manual || decomposing ? brightnessAt(lamp, nm) : t < T.decompose[0]! ? 0 : 1;
   for (const l of rayLines) {
-    (l.material as unknown as { color: THREE.Color }).color.setHex(colour);
-    (l.material as unknown as { opacity: number }).opacity = on ? 0.08 + 0.72 * b : 0.25;
+    (l.material as unknown as { color: THREE.Color }).color.copy(colour);
+    (l.material as unknown as { opacity: number }).opacity = t < T.decompose[0]! && !manual ? 0.25 : 0.08 + 0.72 * b;
   }
 });
 
