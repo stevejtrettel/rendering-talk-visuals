@@ -21,8 +21,12 @@
  * to the colour of all of it together. The `wavelength` slider moves the bar
  * by hand.
  *
- * `lamp`: a 5800 K blackbody (sun: a smooth curve, a measure with a density),
- * or neon's emission lines (spikes, a measure with no density; line positions
+ * `lamp`: an incandescent bulb, a 2700 K blackbody (the default: a smooth
+ * curve rising steeply toward the red, so the rows and the rays visibly change
+ * in brightness; Steve, 2026-10-29: the sun's spectrum varied too little); the
+ * sun, a 5800 K blackbody (nearly flat across the visible); a white LED (a
+ * narrow blue peak and a broad yellow one: a shape, not a slope); all
+ * measures with a density. Or neon's emission lines (spikes, a measure with no density; line positions
  * real, heights approximate). Under neon the rays go dark between the lines.
  *
  * Scales: optical frequencies are drawn slowed, a sinusoid of wavelength λ
@@ -199,12 +203,17 @@ function planck(nm: number, T: number): number {
   const l = nm * 1e-9;
   return 1 / (l ** 5 * (Math.exp(1.4388e-2 / (l * T)) - 1));
 }
-const PLANCK_PEAK = (() => {
+/** A blackbody at T kelvin, normalised to peak 1 over the band. */
+const blackbody = (T: number) => {
   let m = 0;
-  for (let nm = WL0; nm <= WL1; nm += 1) m = Math.max(m, planck(nm, 5800));
-  return m;
-})();
-const sunAt = (nm: number) => planck(nm, 5800) / PLANCK_PEAK;
+  for (let nm = WL0; nm <= WL1; nm += 1) m = Math.max(m, planck(nm, T));
+  return (nm: number) => planck(nm, T) / m;
+};
+const BULB = blackbody(2700); // an incandescent bulb: rises steeply toward the red
+const SUN = blackbody(5800); // nearly flat across the visible
+/** A white LED: a narrow blue peak from the diode and a broad yellow one from its phosphor. */
+const LED = (nm: number) => Math.exp(-(((nm - 450) / 11) ** 2) / 2) + 0.62 * Math.exp(-(((nm - 565) / 48) ** 2) / 2);
+const smoothAt = (lamp: Lamp, nm: number) => (lamp === 'sun' ? SUN(nm) : lamp === 'led' ? LED(nm) : BULB(nm));
 /** Neon's strong visible lines, nm, with approximate relative heights. */
 const NEON: [number, number][] = [
   [585.2, 0.55], [588.2, 0.3], [594.5, 0.5], [597.6, 0.2], [603.0, 0.22], [607.4, 0.4],
@@ -212,7 +221,7 @@ const NEON: [number, number][] = [
   [638.3, 0.55], [640.2, 1.0], [650.7, 0.65], [659.9, 0.35], [667.8, 0.3], [671.7, 0.2],
   [692.9, 0.4], [703.2, 0.5],
 ];
-type Lamp = 'sun' | 'neon';
+type Lamp = 'bulb' | 'led' | 'sun' | 'neon';
 const ROWS = 30;
 /** The rows of the decomposition: [nm, brightness]. */
 const rowsOf = (lamp: Lamp): [number, number][] =>
@@ -220,11 +229,11 @@ const rowsOf = (lamp: Lamp): [number, number][] =>
     ? NEON
     : Array.from({ length: ROWS }, (_, i) => {
         const nm = WL0 + 6 + ((WL1 - WL0 - 12) * i) / (ROWS - 1);
-        return [nm, sunAt(nm)] as [number, number];
+        return [nm, smoothAt(lamp, nm)] as [number, number];
       });
 /** Brightness at a wavelength, for the rays: the curve (sun) or the nearest line within a nanometre (neon). */
 const brightnessAt = (lamp: Lamp, nm: number) =>
-  lamp === 'sun' ? sunAt(nm) : NEON.reduce((m, [l, h]) => (Math.abs(l - nm) < 1.2 ? Math.max(m, h) : m), 0);
+  lamp !== 'neon' ? smoothAt(lamp, nm) : NEON.reduce((m, [l, h]) => (Math.abs(l - nm) < 1.2 ? Math.max(m, h) : m), 0);
 
 const smoothStep = (u: number) => u * u * (3 - 2 * u);
 /** The colour of the lamp's whole spectrum, through the observer. */
@@ -232,7 +241,7 @@ function mixColour(lamp: Lamp): number {
   const xyz = [0, 0, 0];
   const add3 = (nm: number, h: number) => CMF.forEach((f, c) => (xyz[c]! += f(Math.min(nm, 670)) * h));
   if (lamp === 'neon') for (const [nm, h] of NEON) add3(nm, h);
-  else for (let nm = WL0; nm <= WL1; nm += 2) add3(nm, sunAt(nm));
+  else for (let nm = WL0; nm <= WL1; nm += 2) add3(nm, smoothAt(lamp, nm));
   const m = Math.max(...xyz) || 1;
   return xyzToHex(xyz[0]! / m, xyz[1]! / m, xyz[2]! / m);
 }
@@ -309,9 +318,9 @@ const T = { decompose: [1.2, 16.0], settle: [16.5, 18.0] };
 const ramp = (t: number, [a, b]: number[]) => Math.min(1, Math.max(0, (t - a!) / (b! - a!)));
 const smooth = (u: number) => u * u * (3 - 2 * u);
 
-const params = { lamp: 'sun' as Lamp, wavelength: 550 };
+const params = { lamp: 'bulb' as Lamp, wavelength: 550 };
 let manual = false;
-ui.params.add(params, 'lamp', ['sun', 'neon']);
+ui.params.add(params, 'lamp', ['bulb', 'led', 'sun', 'neon']);
 ui.params.add(params, 'wavelength', WL0, WL1, 1).onChange(() => (manual = true));
 
 stage.frame((t) => {
@@ -341,7 +350,7 @@ stage.frame((t) => {
   const pos = specFill.geometry.attributes.position as THREE.BufferAttribute;
   for (let i = 0; i <= SAMPLES; i++) {
     const nm = Math.min(front, WL0 + ((WL1 - WL0) * i) / SAMPLES);
-    const h = lamp === 'sun' ? sunAt(nm) : 0;
+    const h = lamp !== 'neon' ? smoothAt(lamp, nm) : 0;
     const x = SPEC.x0 + h * (SPEC.x1 - SPEC.x0);
     pts.push([x, yOf(nm), 0]);
     pos.setXYZ(2 * i, x, yOf(nm), -0.01);
@@ -349,7 +358,7 @@ stage.frame((t) => {
   }
   pos.needsUpdate = true;
   setPolyline(specCurve, pts);
-  specCurve.visible = specFill.visible = lamp === 'sun' && front > WL0;
+  specCurve.visible = specFill.visible = lamp !== 'neon' && front > WL0;
   NEON.forEach(([nm, h], k) => {
     stems[k]!.visible = lamp === 'neon' && nm <= front;
     setPolyline(stems[k]!, [[SPEC.x0, yOf(nm), 0], [SPEC.x0 + h * (SPEC.x1 - SPEC.x0), yOf(nm), 0]]);
