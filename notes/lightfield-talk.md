@@ -4,6 +4,14 @@
 This file records the arc as Steve has laid it out. Nothing enters it without
 his approval. Audience and date: not yet given.*
 
+## The rule
+
+**Say true things.** The talk does not dig into approximations, but nothing
+it says may be false. Where a short claim would be untrue, it is reworded to
+be true at the same length rather than explained: "an RGB light field", not
+"the light field"; "a computed fixed point", not "the exact fixed point";
+"the ray-optics model of light", not "how light behaves".
+
 ## The arc
 
 1. **Beautiful path-traced images.** Steve's own and from films. No cold
