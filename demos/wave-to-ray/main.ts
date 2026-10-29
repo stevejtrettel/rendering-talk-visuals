@@ -204,27 +204,13 @@ MIRRORS.forEach((m, i) => {
   for (let j = 0; j + 1 < poly.length; j++) BLOCKERS.push({ a: poly[j], b: poly[j + 1], owner: i });
 });
 
-/**
- * `?frame=room` also has the disc the room carries on every slide of this run
- * (wave-room ?scene=beam, beam-spectrum, light-field-room): off to the side,
- * clipping the top of the light coming back off the concave mirror. Here it is
- * black, like the walls (this computation has nothing to reflect off it), and
- * opaque: an octagon of blockers in the line-of-sight test, owner 2 (never a
- * source), and the field black inside it.
- */
-const DISC = { c: v(-2.3, 2.42), r: 0.3 };
-const DISC_ON = new URLSearchParams(location.search).get('frame') === 'room';
-const DISC_POLY: Vec[] = Array.from({ length: 9 }, (_, k) => add(DISC.c, fromAngle((360 * k) / 8), DISC.r / Math.cos(Math.PI / 8)));
-if (DISC_ON) for (let j = 0; j < 8; j++) BLOCKERS.push({ a: DISC_POLY[j], b: DISC_POLY[j + 1], owner: 2 });
-
-/** Does the segment a→b cross any mirror other than the ones being connected (or the disc)? */
+/** Does the segment a→b cross any mirror other than the ones being connected? */
 function blocked(a: Vec, b: Vec, skip0: number, skip1: number): boolean {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
-  const polys = DISC_ON ? [...POLYS, DISC_POLY] : POLYS;
-  for (let k = 0; k < polys.length; k++) {
+  for (let k = 0; k < POLYS.length; k++) {
     if (k === skip0 || k === skip1) continue;
-    const poly = polys[k];
+    const poly = POLYS[k];
     for (let i = 0; i + 1 < poly.length; i++) {
       const p = poly[i];
       const q = poly[i + 1];
@@ -322,7 +308,6 @@ if (ROOM) {
   const N = perp(A);
   const at = (x: number, y: number) => add(add(SOURCE.center, A, x), N, y);
   line([at(0.18, 0.95), at(-0.3, 0.95), at(-0.3, -0.95), at(0.18, -0.95)], 6);
-  line(Array.from({ length: 41 }, (_, k) => add(DISC.c, fromAngle((360 * k) / 40), DISC.r)), 5);
 } else {
   MIRRORS.forEach(drawMirror);
 }
@@ -381,8 +366,8 @@ const FIELD_FRAG = /* glsl */ `
   uniform float uRoom; // 1: black outside the room (frame=room)
   uniform int uSS;     // supersamples per axis
   uniform vec2 uTexel; // world size of one output pixel
-  uniform vec4 uBlock[16];
-  uniform float uBlockOwner[16];
+  uniform vec4 uBlock[8];
+  uniform float uBlockOwner[8];
   uniform int uBlockCount;
 
   varying vec2 vUv;
@@ -444,10 +429,6 @@ const FIELD_FRAG = /* glsl */ `
   void main() {
     vec2 p0 = mix(uMin, uMax, vUv);
     float n = float(uSS);
-    if (uRoom > 0.5 && length(p0 - vec2(${DISC.c.x}, ${DISC.c.y})) < ${DISC.r}) {
-      fragColor = vec4(0.0, 0.0, 0.0, 1.0);
-      return;
-    }
     if (uRoom > 0.5) {
       vec2 q = abs(p0) - vec2(${ROOM_HALF.x - ROOM_R}, ${ROOM_HALF.y - ROOM_R});
       if (length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) > ${ROOM_R}) {
@@ -503,18 +484,18 @@ const fieldMat = new THREE.ShaderMaterial({
     uSS: { value: 2 },
     uTexel: { value: new THREE.Vector2() },
     uBlock: {
-      value: Array.from({ length: 16 }, (_, i) =>
+      value: Array.from({ length: 8 }, (_, i) =>
         i < BLOCKERS.length
           ? new THREE.Vector4(BLOCKERS[i].a.x, BLOCKERS[i].a.y, BLOCKERS[i].b.x, BLOCKERS[i].b.y)
           : new THREE.Vector4(),
       ),
     },
     uBlockOwner: {
-      value: Float32Array.from({ length: 16 }, (_, i) =>
+      value: Float32Array.from({ length: 8 }, (_, i) =>
         i < BLOCKERS.length ? BLOCKERS[i].owner : -99,
       ),
     },
-    uBlockCount: { value: Math.min(16, BLOCKERS.length) },
+    uBlockCount: { value: Math.min(8, BLOCKERS.length) },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -812,19 +793,6 @@ function traceRay(start: Vec, dir: Vec, out: [number, number, number][]): void {
   let i = 1;
   for (; i < RAY_POINTS; i++) {
     const hit = hitMirror(o, d, skip);
-    if (DISC_ON) {
-      const ox = o.x - DISC.c.x;
-      const oy = o.y - DISC.c.y;
-      const b = ox * d.x + oy * d.y;
-      const disc = b * b - (ox * ox + oy * oy - DISC.r * DISC.r);
-      const tc = disc >= 0 ? -b - Math.sqrt(disc) : -1;
-      if (tc > 1e-4 && (!hit || tc < hit.t)) {
-        const e = add(o, d, tc);
-        out[i] = [e.x, e.y, 0];
-        i++;
-        break;
-      }
-    }
     if (!hit || i === RAY_POINTS - 1) {
       // Run out to the edge of the frame.
       // To the edge of the frame, or to the room's (black) walls.
