@@ -1,36 +1,44 @@
 /**
- * Along a ray, light carries a spectrum.
+ * Along a ray, light carries a spectrum: the argument, in three steps (Steve,
+ * 2026-10-29: the EM wave is some big combination; we decompose it into
+ * frequencies to do the equilibrium-brightness argument; then we get the
+ * spectrum along the ray).
  *
- * The scene of the two slides before (wave-room ?scene=beam, wave-to-ray
- * ?frame=room): the lamp in its housing, the flat mirror, the concave one, in
- * the same room, now in the ray limit: the beam is drawn as rays. At a point on
- * the beam (the ring), the graph at the right is the light arriving along that
- * ray, brightness against wavelength.
+ * The scene of the slides before (wave-room ?scene=beam, wave-to-ray
+ * ?frame=room), smaller, at the top left, in the ray limit; a ring marks a
+ * point on the beam.
  *
- * Why that is the right object (Steve, 2026-10-29): the ray-optics argument
- * works for each Fourier mode separately, and brightness adds across modes,
- * since the cross terms between different frequencies average away. So along a
- * ray the light is "how much brightness at each wavelength": a positive measure
- * on wavelengths, the spectrum.
+ *   1. The field there. At the bottom left, the electric field at the ring
+ *      against time: a jagged, noise-like signal, the sum of many frequencies
+ *      at once (NM modes, amplitudes the square root of the spectrum, fixed
+ *      random phases: what a broadband source looks like).
+ *   2. Decompose it. It fans out into single frequencies, drawn as pure
+ *      sinusoids in their own colours. These are REP representatives of a
+ *      continuum (the signal is made of NM of them, not of these), so they are
+ *      not drawn summing to it.
+ *   3. Each frequency on its own. One at a time, the beam lights in that
+ *      colour: the same rays for every wavelength (the mirrors treat them
+ *      alike), which is the slide before, done once per frequency. Its
+ *      brightness at the ring, the square of its amplitude, drops onto the
+ *      graph as a bar at its wavelength.
+ *   4. All of them. The rest fill in; brightnesses add across frequencies (the
+ *      cross terms average away), so the bars become the spectrum, and the
+ *      beam's colours sum to its colour.
  *
- * `lamp` switches the source between:
+ * `lamp` switches between a 5800 K blackbody (sun: a smooth curve, a measure
+ * with a density) and neon's emission lines (spikes, a measure with no density;
+ * line positions real, heights approximate). For neon the representatives are
+ * its strongest lines. The beam's colour is the spectrum through the CIE
+ * observer (response.ts). The walls are black, as on the ray slide.
  *
- *   sun   a 5800 K blackbody: a smooth curve, a measure with a density;
- *   neon  a neon lamp's emission lines: spikes, a measure with no density at
- *         all. Line positions are neon's strongest visible lines; relative
- *         heights are approximate. Each line is drawn as a stem whose height is
- *         its share of the light (an atom), not a density.
- *
- * The mirrors reflect every wavelength alike, so the spectrum is the same
- * everywhere along the beam, and the rays are the same for every wavelength.
- * The beam's colour on screen is the spectrum's colour through the CIE
- * observer (response.ts). As on the ray slide, the walls are black: the rays
- * stop there.
+ * Signal scale: optical frequencies are drawn slowed, a sinusoid of wavelength
+ * λ completing CYCLES / λ cycles across the trace and drifting at a rate
+ * proportional to its frequency. Only the ratios are real.
  */
 
 import * as THREE from 'three';
 import { createStage, createUI, C, flat } from '@';
-import { polyline } from '@/lines';
+import { polyline, setPolyline } from '@/lines';
 import { label } from '@/text';
 import { CMF, xyzToHex } from '@/response';
 
@@ -44,12 +52,12 @@ const stage = createStage({
   lights: false,
   controls: false,
 });
-stage.duration = 8;
+stage.duration = 24;
 const ui = createUI(stage);
 
 /** The room, drawn at this scale and centre; the graph sits to its right. */
-const ROOM_SCALE = 0.6;
-const ROOM_AT = { x: -2.1, y: 0.15 };
+const ROOM_SCALE = 0.48;
+const ROOM_AT = { x: -2.65, y: 1.4 };
 const room = new THREE.Group();
 room.scale.setScalar(ROOM_SCALE);
 room.position.set(ROOM_AT.x, ROOM_AT.y, 0);
@@ -186,9 +194,10 @@ for (let i = 0; i < RAYS; i++) {
 const PROBE = add(central[1]!, v(central[2]!.x - central[1]!.x, central[2]!.y - central[1]!.y), 0.5);
 {
   const ring: Vec[] = [];
-  for (let k = 0; k <= 32; k++) ring.push(add(PROBE, fromAngle((360 * k) / 32), 0.22));
+  for (let k = 0; k <= 32; k++) ring.push(add(PROBE, fromAngle((360 * k) / 32), 0.3));
   line(ring, C.bone, 4);
 }
+const probeOnStage = v(ROOM_AT.x + PROBE.x * ROOM_SCALE, ROOM_AT.y + PROBE.y * ROOM_SCALE);
 
 // --- Spectra ---------------------------------------------------------------------
 const WL0 = 380;
@@ -200,11 +209,8 @@ function planck(nm: number, T: number): number {
   const l = nm * 1e-9;
   return 1 / (l ** 5 * (Math.exp(1.4388e-2 / (l * T)) - 1));
 }
-const SUN = (() => {
-  const vals = Array.from({ length: NS + 1 }, (_, i) => planck(nmAt(i), 5800));
-  const m = Math.max(...vals);
-  return vals.map((x) => x / m);
-})();
+const PLANCK_PEAK = Math.max(...Array.from({ length: NS + 1 }, (_, i) => planck(nmAt(i), 5800)));
+const sunAt = (nm: number) => planck(nm, 5800) / PLANCK_PEAK;
 /** Neon's strong visible lines, nm, with approximate relative heights. */
 const NEON: [number, number][] = [
   [585.2, 0.55], [588.2, 0.3], [594.5, 0.5], [597.6, 0.2], [603.0, 0.22], [607.4, 0.4],
@@ -212,21 +218,56 @@ const NEON: [number, number][] = [
   [638.3, 0.55], [640.2, 1.0], [650.7, 0.65], [659.9, 0.35], [667.8, 0.3], [671.7, 0.2],
   [692.9, 0.4], [703.2, 0.5],
 ];
+type Lamp = 'sun' | 'neon';
 
-/** A spectrum's colour, through the CIE observer, at full brightness. */
-function colourOf(lamp: 'sun' | 'neon'): number {
-  const xyz = [0, 0, 0];
-  if (lamp === 'sun') {
-    for (let i = 0; i <= NS; i++) CMF.forEach((f, c) => (xyz[c]! += f(nmAt(i)) * SUN[i]!));
-  } else {
-    for (const [nm, h] of NEON) CMF.forEach((f, c) => (xyz[c]! += f(nm) * h));
-  }
-  const m = Math.max(...xyz);
-  return xyzToHex(xyz[0]! / m, xyz[1]! / m, xyz[2]! / m);
+/** The modes the signal is made of, and the representatives shown: [nm, brightness]. */
+const NM = 60;
+const REP = 5;
+function modes(lamp: Lamp): [number, number][] {
+  if (lamp === 'neon') return NEON;
+  return Array.from({ length: NM }, (_, i) => {
+    const nm = WL0 + 10 + ((WL1 - WL0 - 20) * i) / (NM - 1);
+    return [nm, sunAt(nm)] as [number, number];
+  });
+}
+function representatives(lamp: Lamp): [number, number][] {
+  if (lamp === 'neon') return [...NEON].sort((a, b) => b[1] - a[1]).slice(0, REP).sort((a, b) => a[0] - b[0]);
+  return [440, 490, 540, 600, 660].map((nm) => [nm, sunAt(nm)] as [number, number]);
 }
 
-// --- The graph -------------------------------------------------------------------
-const G = { x0: 1.75, x1: 5.05, y0: -1.0, y1: 1.3 };
+/** A wavelength's colour, through the CIE observer, at full brightness. */
+function nmColour(nm: number): number {
+  const xyz = CMF.map((f) => f(nm));
+  const m = Math.max(...xyz) || 1;
+  return xyzToHex(xyz[0]! / m, xyz[1]! / m, xyz[2]! / m);
+}
+/** The colour of a set of [nm, brightness] lines, summed through the observer. */
+function mixColour(lines: [number, number][]): number {
+  const xyz = [0, 0, 0];
+  for (const [nm, h] of lines) CMF.forEach((f, c) => (xyz[c]! += f(nm) * h));
+  const m = Math.max(...xyz) || 1;
+  return xyzToHex(xyz[0]! / m, xyz[1]! / m, xyz[2]! / m);
+}
+const fullMix = (lamp: Lamp): [number, number][] =>
+  lamp === 'neon' ? NEON : Array.from({ length: NS + 1 }, (_, i) => [nmAt(i), sunAt(nmAt(i))] as [number, number]);
+
+// --- The signal and its frequencies (bottom left) --------------------------------
+const S = { x0: -5.0, x1: -0.35, top: -0.72, gap: 0.4, amp: 0.15, samples: 420 };
+const CYCLES = 6000; // a sinusoid of wavelength nm completes CYCLES / nm cycles across the trace
+const phaseOf = (k: number) => ((Math.imul(k + 7, 0x9e3779b1) >>> 0) / 4294967296) * 2 * Math.PI;
+const wave = (nm: number, amp: number, ph: number, t: number) => (x: number) =>
+  amp * Math.sin(2 * Math.PI * (CYCLES / nm) * x - 2 * Math.PI * (CYCLES / nm) * 0.12 * t + ph);
+const traceLine = polyline(Array.from({ length: S.samples }, () => [0, 0, 0] as [number, number, number]), { color: C.bone, width: 3 });
+const repLines = Array.from({ length: REP }, () =>
+  polyline(Array.from({ length: S.samples }, () => [0, 0, 0] as [number, number, number]), { color: C.bone, width: 3, opacity: 0.999 }),
+);
+stage.add(traceLine, ...repLines);
+stage.add(label('field at the ring', { size: 0.17, color: C.ash, anchorX: 'left', anchorY: 'bottom', position: [S.x0, S.top + 0.36, 0] }));
+// A leader from the ring to the signal, so it is clear where the signal is taken.
+stage.add(polyline([[probeOnStage.x, probeOnStage.y - 0.15, 0], [probeOnStage.x, S.top + 0.4, 0]], { color: C.slateDeep, width: 2 }));
+
+// --- The graph (right) --------------------------------------------------------------
+const G = { x0: 1.0, x1: 5.05, y0: -1.25, y1: 1.45 };
 const gx = (nm: number) => G.x0 + ((nm - WL0) / (WL1 - WL0)) * (G.x1 - G.x0);
 const gy = (h: number) => G.y0 + h * (G.y1 - G.y0);
 stage.add(polyline([[G.x0, G.y0, 0], [G.x1, G.y0, 0]], { color: C.slateDeep, width: 2 }));
@@ -234,19 +275,14 @@ for (const nm of [400, 500, 600, 700]) {
   stage.add(polyline([[gx(nm), G.y0 - 0.08, 0], [gx(nm), G.y0, 0]], { color: C.slateDeep, width: 2 }));
   stage.add(label(String(nm), { size: 0.17, color: C.slate, anchorX: 'center', anchorY: 'top', position: [gx(nm), G.y0 - 0.3, 0] }));
 }
-// A strip of the spectral colours under the axis, so wavelength reads as colour.
 {
   const strip = new THREE.Group();
   for (let i = 0; i < NS; i++) {
     const nm = nmAt(i + 0.5);
     const xyz = CMF.map((f) => f(nm));
-    const m = Math.max(...xyz) || 1;
     const w = gx(nmAt(i + 1)) - gx(nmAt(i));
     const fade = Math.min(1, (xyz[0]! + xyz[1]! + xyz[2]!) * 1.6); // dim toward the ends, where the eye barely sees
-    const mesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(w * 1.02, 0.1),
-      flat(xyzToHex(xyz[0]! / m, xyz[1]! / m, xyz[2]! / m), { transparent: true, opacity: fade }),
-    );
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w * 1.02, 0.1), flat(nmColour(nm), { transparent: true, opacity: fade }));
     mesh.position.set(gx(nm), G.y0 - 0.16, 0);
     strip.add(mesh);
   }
@@ -254,40 +290,100 @@ for (const nm of [400, 500, 600, 700]) {
 }
 stage.add(label('Spectrum', { size: 0.2, color: C.ash, anchorX: 'center', anchorY: 'top', position: [(G.x0 + G.x1) / 2, G.y0 - 0.58, 0] }));
 
-// The curve (sun) and the stems (neon), in the graph's ink.
-const sunGroup = new THREE.Group();
-{
-  const pts = SUN.map((h, i) => [gx(nmAt(i)), gy(h), 0] as [number, number, number]);
-  sunGroup.add(polyline(pts, { color: C.bone, width: 4 }));
-  const pos: number[] = [];
-  const idx: number[] = [];
-  SUN.forEach((h, i) => {
-    pos.push(gx(nmAt(i)), gy(h), -0.01, gx(nmAt(i)), G.y0, -0.01);
-    if (i < NS) idx.push(2 * i, 2 * i + 1, 2 * i + 2, 2 * i + 1, 2 * i + 3, 2 * i + 2);
-  });
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setIndex(idx);
-  sunGroup.add(new THREE.Mesh(g, flat(C.bone, { transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false })));
-}
-const neonGroup = new THREE.Group();
-for (const [nm, h] of NEON) {
-  neonGroup.add(polyline([[gx(nm), G.y0, 0], [gx(nm), gy(h), 0]], { color: C.bone, width: 3 }));
-  const dot = new THREE.Mesh(new THREE.CircleGeometry(0.045, 16), flat(C.bone));
-  dot.position.set(gx(nm), gy(h), 0.01);
-  neonGroup.add(dot);
-}
-stage.add(sunGroup, neonGroup);
+// Bars for the representatives, then the full spectrum (curve for sun, stems for neon).
+const repBars = Array.from({ length: REP }, () => polyline([[0, 0, 0], [0, 0, 0]], { color: C.bone, width: 7 }));
+stage.add(...repBars);
+const curve = polyline(Array.from({ length: NS + 1 }, () => [0, 0, 0] as [number, number, number]), { color: C.bone, width: 4, opacity: 0.999 });
+const fillGeom = new THREE.BufferGeometry();
+fillGeom.setAttribute('position', new THREE.BufferAttribute(new Float32Array((NS + 1) * 6), 3));
+fillGeom.setIndex(Array.from({ length: NS }, (_, i) => [2 * i, 2 * i + 1, 2 * i + 2, 2 * i + 1, 2 * i + 3, 2 * i + 2]).flat());
+const fillMat = flat(C.bone, { transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false });
+const fill = new THREE.Mesh(fillGeom, fillMat);
+fill.position.z = -0.01;
+const stems = NEON.map(() => polyline([[0, 0, 0], [0, 0, 0]], { color: C.bone, width: 3, opacity: 0.999 }));
+stage.add(curve, fill, ...stems);
 
-// --- Controls --------------------------------------------------------------------
-const params = { lamp: 'sun' as 'sun' | 'neon' };
-function show(): void {
-  sunGroup.visible = params.lamp === 'sun';
-  neonGroup.visible = params.lamp === 'neon';
-  const c = new THREE.Color(colourOf(params.lamp));
-  for (const l of rayLines) (l.material as THREE.Material & { color: THREE.Color }).color.copy(c);
-}
-ui.params.add(params, 'lamp', ['sun', 'neon']).onChange(show);
-show();
+// --- Timeline ------------------------------------------------------------------------
+const T = {
+  signalIn: [0.3, 1.2],
+  split: [3.0, 5.0], // the signal fans out into its frequencies
+  each: 6.0, // first frequency's beam and bar
+  step: 2.0, // per frequency
+  fill: [6.0 + REP * 2.0 + 0.5, 6.0 + REP * 2.0 + 3.0], // the rest of the spectrum
+};
+const ramp = (t: number, [a, b]: number[]) => Math.min(1, Math.max(0, (t - a!) / (b! - a!)));
+const smooth = (u: number) => u * u * (3 - 2 * u);
+const setOpacity = (l: { material: THREE.Material }, o: number) => {
+  (l.material as THREE.Material & { opacity: number }).opacity = o;
+  (l as unknown as THREE.Object3D).visible = o > 0.005;
+};
+
+const params = { lamp: 'sun' as Lamp };
+ui.params.add(params, 'lamp', ['sun', 'neon']);
+
+stage.frame((t) => {
+  const lamp = params.lamp;
+  const all = modes(lamp);
+  const reps = representatives(lamp);
+  const peak = Math.max(...all.map(([, h]) => h));
+
+  // 1. The signal: the sum of every mode, amplitude sqrt(brightness), fixed phases.
+  const norm = 1 / Math.sqrt(all.reduce((a, [, h]) => a + h, 0));
+  const split = smooth(ramp(t, T.split));
+  const xs = Array.from({ length: S.samples }, (_, i) => i / (S.samples - 1));
+  const sig = xs.map((x) => all.reduce((a, [nm, h], k) => a + wave(nm, Math.sqrt(h), phaseOf(k), t)(x), 0) * norm * 3.2);
+  setPolyline(traceLine, xs.map((x, i) => [S.x0 + x * (S.x1 - S.x0), S.top + sig[i]! * S.amp * 1.4, 0] as [number, number, number]));
+  setOpacity(traceLine as never, smooth(ramp(t, T.signalIn)));
+
+  // 2. Its frequencies, fanning out below it.
+  reps.forEach(([nm, h], r) => {
+    const y = S.top - S.gap * (r + 1) * split;
+    const amp = Math.sqrt(h / peak);
+    setPolyline(repLines[r]!, xs.map((x) => [S.x0 + x * (S.x1 - S.x0), y + wave(nm, amp, phaseOf(r * 13 + 1), t)(x) * S.amp, 0] as [number, number, number]));
+    (repLines[r]!.material as unknown as { color: THREE.Color }).color.setHex(nmColour(nm));
+    // 3. Highlighted while its beam is lit.
+    const on = ramp(t, [T.each + r * T.step, T.each + r * T.step + 0.3]);
+    setOpacity(repLines[r] as never, split * (0.5 + 0.5 * (on > 0 && t < T.each + (r + 1) * T.step ? 1 : 0.4)));
+  });
+
+  // 3. One frequency at a time: the beam in its colour, its bar on the graph.
+  const r = Math.floor((t - T.each) / T.step);
+  const lit: [number, number][] = [];
+  reps.forEach(([nm, h], k) => {
+    const grow = smooth(ramp(t, [T.each + k * T.step + 0.4, T.each + k * T.step + 1.2]));
+    setPolyline(repBars[k]!, [[gx(nm), G.y0, 0.02], [gx(nm), gy((h / peak) * grow), 0.02]]);
+    (repBars[k]!.material as unknown as { color: THREE.Color }).color.setHex(nmColour(nm));
+    repBars[k]!.visible = grow > 0;
+    if (grow > 0) lit.push([nm, h]);
+  });
+  const fillIn = smooth(ramp(t, T.fill));
+  let beam: number | null = null;
+  if (fillIn > 0) beam = mixColour(fullMix(lamp));
+  else if (r >= 0 && r < REP) beam = nmColour(reps[r]![0]);
+  else if (r >= REP) beam = mixColour(lit);
+  for (const l of rayLines) {
+    (l.material as unknown as { color: THREE.Color }).color.setHex(beam ?? 0x666666);
+    (l.material as unknown as { opacity: number }).opacity = beam === null ? 0.25 : 0.55;
+  }
+
+  // 4. The rest of the spectrum fills in, left to right.
+  const edge = WL0 + (WL1 - WL0) * fillIn;
+  const pos = fillGeom.attributes.position as THREE.BufferAttribute;
+  const pts: [number, number, number][] = [];
+  for (let i = 0; i <= NS; i++) {
+    const nm = nmAt(i);
+    const h = lamp === 'sun' && nm <= edge ? sunAt(nm) / peak : 0;
+    pts.push([gx(nm), gy(h), 0]);
+    pos.setXYZ(2 * i, gx(nm), gy(h), 0);
+    pos.setXYZ(2 * i + 1, gx(nm), G.y0, 0);
+  }
+  pos.needsUpdate = true;
+  setPolyline(curve, pts);
+  curve.visible = fill.visible = lamp === 'sun' && fillIn > 0;
+  NEON.forEach(([nm, h], k) => {
+    stems[k]!.visible = lamp === 'neon' && fillIn > 0 && nm <= edge;
+    setPolyline(stems[k]!, [[gx(nm), G.y0, 0], [gx(nm), gy(h / peak), 0]]);
+  });
+});
 
 stage.start();
