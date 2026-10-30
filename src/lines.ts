@@ -15,6 +15,8 @@ import * as THREE from 'three';
 import { Line2 } from 'three/examples/jsm/lines/Line2.js';
 import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
+import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
+import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
 import { C } from './style';
 
 const materials = new Set<LineMaterial>();
@@ -77,6 +79,27 @@ export function polyline(points: Pt[], opts: LineOptions = {}): Line2 {
   const line = new Line2(geom, mat);
   if (dashed) line.computeLineDistances();
   return line;
+}
+
+/**
+ * Many separate thick segments in one draw: `positions` holds two points (six
+ * numbers) per segment and `colors` an rgb per point. `additive` blends them
+ * as light adds, so where segments cross they brighten (for drawing rays).
+ */
+export function segments(positions: number[], colors: number[], opts: { width?: number; additive?: boolean } = {}): LineSegments2 {
+  const geom = new LineSegmentsGeometry();
+  geom.setPositions(positions);
+  geom.setColors(colors);
+  const mat = new LineMaterial({
+    vertexColors: true,
+    linewidth: opts.width ?? 2,
+    worldUnits: false,
+    transparent: !!opts.additive,
+    blending: opts.additive ? THREE.AdditiveBlending : THREE.NormalBlending,
+    depthWrite: !opts.additive,
+  });
+  materials.add(mat);
+  return new LineSegments2(geom, mat);
 }
 
 /**

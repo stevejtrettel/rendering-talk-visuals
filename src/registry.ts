@@ -207,6 +207,16 @@ export const INFO: Record<string, DemoInfo> = {
     blurb: "The beam room with coloured walls, its equilibrium light computed by light tracing (spectral, in the ray limit). Drag a probe ray anywhere and the graph shows the spectrum travelling along it, read back from the surface it left.",
     section: 'Modeling Light',
   },
+  'brdf-fan': {
+    title: 'What T Is Made Of',
+    blurb: 'One ray of white light meets the red wall, the green wall and a mirror of the beam room; what leaves is drawn as rays, the surface\'s BRDF: the walls the same in every direction in their colour (white times the Material Response below), the mirror one way.',
+    section: 'Modeling Light',
+  },
+  'beam-bounce': {
+    title: 'The Lamp, and One Bounce',
+    blurb: 'The beam room twice, as rays: E, the lamp\'s light to the first thing it meets; and T(E), the room acting once: the mirror sends the beam on, the walls send light out in every direction in their colour.',
+    section: 'Modeling Light',
+  },
   'equilibrium-room': {
     title: 'Which Light Fields Are Equilibria?',
     blurb: 'Guesses at the light in the beam room (darkness, the lamp alone, glowing walls): each drawn as L, then T(L), then E + T(L), and none comes back to itself. The equilibrium is the one that would. ?panels=three: L = E + T(L) for the computed equilibrium; ?panels=question: E and L.',
