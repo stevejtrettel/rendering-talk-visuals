@@ -307,6 +307,92 @@ export function fluenceOf(which: 'L' | 'E' | 'T'): Float64Array {
   return (FLUENCE_T ??= traceT());
 }
 
+// --- Any light field, and T of it ------------------------------------------------
+/**
+ * A light field given by the light leaving surfaces: the lamp's beam (if
+ * `lamp`) and, from each diffuse wall piece, a Lambertian glow of radiance
+ * `wall(s)` (a spectrum, or null for none). Light fields of this kind can be
+ * written down without solving anything, and T of them computed: the
+ * equilibrium is the one that cannot (Steve, 2026-10-29).
+ */
+export interface Candidate {
+  lamp: boolean;
+  wall?: (s: Seg) => Float64Array | null;
+}
+/**
+ * The fluence of a candidate L and of T(L), by tracing: photons leave the
+ * candidate's surfaces (the lamp as in the main trace; the walls by power,
+ * cosine-distributed) and fly to the first thing they meet (L); there they
+ * interact once, a mirror reflecting (MIRROR_R), a diffuse wall reflecting
+ * diffusely (its reflectance), the housing or a wall's back absorbing, and
+ * fly on to the next thing they meet (T(L)).
+ */
+export function traceCandidate(c: Candidate, photons = 60000): { L: Float64Array; T: Float64Array } {
+  const FL = new Float64Array(GW * GH * 3);
+  const FT = new Float64Array(GW * GH * 3);
+  let sd = 0x2468ace;
+  const r = () => {
+    sd ^= sd << 13;
+    sd ^= sd >>> 17;
+    sd ^= sd << 5;
+    return (sd >>> 0) / 4294967296;
+  };
+  const g = () => Math.sqrt(-2 * Math.log(1 - r())) * Math.cos(2 * Math.PI * r());
+  const fly = (o: Vec, d: Vec, from: Seg | null, w: Float64Array) => {
+    const h = hit(o, d, from);
+    if (!h) return;
+    track(o, h.p, toXYZw(w), FL);
+    let d2: Vec;
+    if (h.s.kind === 'black') return;
+    if (h.s.kind === 'mirror') {
+      for (let i = 0; i < NS; i++) w[i]! *= MIRROR_R;
+      d2 = reflect(d, h.s.n);
+    } else {
+      if (dot(d, h.s.n) >= 0) return;
+      for (let i = 0; i < NS; i++) w[i]! *= h.s.albedo![i]!;
+      const st = 2 * r() - 1;
+      d2 = unit(add(add(v(0, 0), h.s.n, Math.sqrt(1 - st * st)), perp(h.s.n), st));
+    }
+    const h2 = hit(h.p, d2, h.s);
+    if (h2) track(h.p, h2.p, toXYZw(w), FT);
+  };
+  const w = new Float64Array(NS);
+  if (c.lamp) {
+    for (let k = 0; k < photons; k++) {
+      let s = g() * SOURCE.waist;
+      while (Math.abs(s) > 0.9) s = g() * SOURCE.waist;
+      const o = add(SOURCE.center, N, s);
+      const d = unit(add(A, N, Math.tan(g() * SOURCE.sigma)));
+      for (let i = 0; i < NS; i++) w[i] = SUN[i]! / photons;
+      fly(o, d, null, w);
+    }
+  }
+  if (c.wall) {
+    // Power leaving a piece: radiance times 2 (the cosine over a half circle) times its length.
+    const glow: { s: Seg; P: Float64Array; Y: number }[] = [];
+    let total = 0;
+    for (const s of segs) {
+      if (s.bin < 0) continue;
+      const Lo = c.wall(s);
+      if (!Lo) continue;
+      const P = Lo.map((x) => 2 * x * binLength[s.bin]!);
+      const Y = toXYZw(P)[1];
+      glow.push({ s, P, Y });
+      total += Y;
+    }
+    for (const { s, P, Y } of glow) {
+      const x = (photons * Y) / total;
+      const n = Math.floor(x) + (r() < x - Math.floor(x) ? 1 : 0);
+      for (let k = 0; k < n; k++) {
+        for (let i = 0; i < NS; i++) w[i] = P[i]! / x;
+        const st = 2 * r() - 1;
+        fly(add(s.a, sub(s.b, s.a), r()), unit(add(add(v(0, 0), s.n, Math.sqrt(1 - st * st)), perp(s.n), st)), s, w);
+      }
+    }
+  }
+  return { L: FL, T: FT };
+}
+
 // --- Reading the light field back: L(x, ω) ---------------------------------------
 // The lamp's emission, normalised to total power 1 per unit of SUN.
 export const EMIT_NORM = 1 / (SOURCE.waist * Math.sqrt(2 * Math.PI) * SOURCE.sigma * Math.sqrt(2 * Math.PI));
@@ -440,36 +526,39 @@ export function drawRoom(room: THREE.Group, opts: { fluence?: Float64Array; expo
     lineIn(HOUSING, C.slate, 5);
   }
   // The room, coloured by the light in it: the fluence image, tone-mapped.
-  {
-    const f = blurred(fluence);
-    const Yref = opts.exposure ?? exposureOf(fluence);
-    const data = new Uint8Array(GW * GH * 4);
-    const hx = ROOM_HALF.x - ROOM_R;
-    const hy = ROOM_HALF.y - ROOM_R;
-    for (let y = 0; y < GH; y++) {
-      for (let x = 0; x < GW; x++) {
-        const i = y * GW + x;
-        const px = -ROOM_HALF.x + (x + 0.5) * CELL;
-        const py = -ROOM_HALF.y + (y + 0.5) * CELL;
-        const qx = Math.max(Math.abs(px) - hx, 0);
-        const qy = Math.max(Math.abs(py) - hy, 0);
-        const inRoom = Math.hypot(qx, qy) < ROOM_R;
-        const Y = f[i * 3 + 1]! / Yref;
-        const k = Y > 0 ? (1 - Math.exp(-Y)) / Y / Yref : 0;
-        const hex = xyzToHex(f[i * 3]! * k, f[i * 3 + 1]! * k, f[i * 3 + 2]! * k);
-        data[i * 4] = (hex >> 16) & 255;
-        data[i * 4 + 1] = (hex >> 8) & 255;
-        data[i * 4 + 2] = hex & 255;
-        data[i * 4 + 3] = inRoom ? 255 : 0;
-      }
+  room.add(fluenceMesh(fluence, opts.exposure));
+}
+
+/** A fluence grid as an image of the room (blurred, tone-mapped 1 - exp about `exposure`). */
+export function fluenceMesh(fluence: Float64Array, exposure?: number): THREE.Mesh {
+  const f = blurred(fluence);
+  const Yref = exposure ?? exposureOf(fluence);
+  const data = new Uint8Array(GW * GH * 4);
+  const hx = ROOM_HALF.x - ROOM_R;
+  const hy = ROOM_HALF.y - ROOM_R;
+  for (let y = 0; y < GH; y++) {
+    for (let x = 0; x < GW; x++) {
+      const i = y * GW + x;
+      const px = -ROOM_HALF.x + (x + 0.5) * CELL;
+      const py = -ROOM_HALF.y + (y + 0.5) * CELL;
+      const qx = Math.max(Math.abs(px) - hx, 0);
+      const qy = Math.max(Math.abs(py) - hy, 0);
+      const inRoom = Math.hypot(qx, qy) < ROOM_R;
+      const Y = f[i * 3 + 1]! / Yref;
+      const k = Y > 0 ? (1 - Math.exp(-Y)) / Y / Yref : 0;
+      const hex = xyzToHex(f[i * 3]! * k, f[i * 3 + 1]! * k, f[i * 3 + 2]! * k);
+      data[i * 4] = (hex >> 16) & 255;
+      data[i * 4 + 1] = (hex >> 8) & 255;
+      data[i * 4 + 2] = hex & 255;
+      data[i * 4 + 3] = inRoom ? 255 : 0;
     }
-    const tex = new THREE.DataTexture(data, GW, GH, THREE.RGBAFormat);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.magFilter = THREE.LinearFilter;
-    tex.minFilter = THREE.LinearFilter;
-    tex.needsUpdate = true;
-    const image = new THREE.Mesh(new THREE.PlaneGeometry(2 * ROOM_HALF.x, 2 * ROOM_HALF.y), new THREE.MeshBasicMaterial({ map: tex, transparent: true, toneMapped: false }));
-    image.position.z = -0.02;
-    room.add(image);
   }
+  const tex = new THREE.DataTexture(data, GW, GH, THREE.RGBAFormat);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearFilter;
+  tex.needsUpdate = true;
+  const image = new THREE.Mesh(new THREE.PlaneGeometry(2 * ROOM_HALF.x, 2 * ROOM_HALF.y), new THREE.MeshBasicMaterial({ map: tex, transparent: true, toneMapped: false }));
+  image.position.z = -0.02;
+  return image;
 }

@@ -208,8 +208,8 @@ export const INFO: Record<string, DemoInfo> = {
     section: 'Modeling Light',
   },
   'equilibrium-room': {
-    title: 'L = E + T(L)',
-    blurb: "The beam room three times: the room's light L; the lamp's light alone E; and T(L), the room sending on once what L delivers to it, computed by its own trace. The first is the sum of the other two. ?panels=question: E and L only.",
+    title: 'Which Light Fields Are Equilibria?',
+    blurb: 'Guesses at the light in the beam room (darkness, the lamp alone, glowing walls): each drawn as L, then T(L), then E + T(L), and none comes back to itself. The equilibrium is the one that would. ?panels=three: L = E + T(L) for the computed equilibrium; ?panels=question: E and L.',
     section: 'Modeling Light',
   },
   'pinhole-camera': {
