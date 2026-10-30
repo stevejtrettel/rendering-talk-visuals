@@ -199,7 +199,12 @@ export const INFO: Record<string, DemoInfo> = {
   },
   'light-field-room': {
     title: 'A Spectrum on Every Ray',
-    blurb: "The beam room with coloured walls and a disc, its equilibrium light computed by light tracing (spectral, in the ray limit). Drag a probe ray anywhere and the graph shows the spectrum travelling along it, read back from the surface it left.",
+    blurb: "The beam room with coloured walls, its equilibrium light computed by light tracing (spectral, in the ray limit). Drag a probe ray anywhere and the graph shows the spectrum travelling along it, read back from the surface it left.",
+    section: 'Modeling Light',
+  },
+  'pinhole-camera': {
+    title: 'A Pinhole Camera',
+    blurb: 'A box with a pinhole in the beam room: each pixel reads the one spectrum on the ray through the pinhole onto it, and turns it into a colour. A 2D room makes a 1D image. Drag the camera after the scan and the image is read again at once.',
     section: 'Modeling Light',
   },
   'beam-spectrum': {
