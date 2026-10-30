@@ -207,6 +207,11 @@ export const INFO: Record<string, DemoInfo> = {
     blurb: "The beam room with coloured walls, its equilibrium light computed by light tracing (spectral, in the ray limit). Drag a probe ray anywhere and the graph shows the spectrum travelling along it, read back from the surface it left.",
     section: 'Modeling Light',
   },
+  'equilibrium-room': {
+    title: 'L = E + T(L)',
+    blurb: "The beam room three times: the room's light L; the lamp's light alone E; and T(L), the room sending on once what L delivers to it, computed by its own trace. The first is the sum of the other two. ?panels=question: E and L only.",
+    section: 'Modeling Light',
+  },
   'pinhole-camera': {
     title: 'A Pinhole Camera',
     blurb: 'A box with a pinhole in the beam room: each pixel reads the one spectrum on the ray through the pinhole onto it, and turns it into a colour. A 2D room makes a 1D image. Drag the camera after the scan and the image is read again at once.',

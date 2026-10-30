@@ -167,13 +167,17 @@ const GW = 336;
 const GH = 184;
 const CELL = (2 * ROOM_HALF.x) / GW;
 const FLUENCE = new Float64Array(GW * GH * 3); // XYZ
+/** The same, of the lamp's light alone: each photon's track before it first meets anything (E). */
+const FLUENCE_E = new Float64Array(GW * GH * 3);
+/** Every photon a mirror sent on, as it left the mirror (for T, below). */
+const MIRROR_OUT: { p: Vec; d: Vec; s: Seg; xyz: [number, number, number] }[] = [];
 const toXYZw = (w: Float64Array): [number, number, number] => {
   const xyz: [number, number, number] = [0, 0, 0];
   for (let i = 0; i < NS; i++) CMF.forEach((f, c) => (xyz[c] += f(Math.min(nmAt(i), 670)) * w[i]!));
   return xyz;
 };
-/** Add a photon's track from a to b, power xyz, into the fluence grid. */
-function track(a: Vec, b: Vec, xyz: [number, number, number]): void {
+/** Add a photon's track from a to b, power xyz, into a fluence grid. */
+function track(a: Vec, b: Vec, xyz: [number, number, number], into = FLUENCE): void {
   const len = Math.hypot(b.x - a.x, b.y - a.y);
   const n = Math.max(1, Math.ceil(len / (CELL * 0.6)));
   const step = len / n;
@@ -183,9 +187,9 @@ function track(a: Vec, b: Vec, xyz: [number, number, number]): void {
     const gy = Math.floor((p.y + ROOM_HALF.y) / CELL);
     if (gx < 0 || gy < 0 || gx >= GW || gy >= GH) continue;
     const o = (gy * GW + gx) * 3;
-    FLUENCE[o]! += xyz[0] * step;
-    FLUENCE[o + 1]! += xyz[1] * step;
-    FLUENCE[o + 2]! += xyz[2] * step;
+    into[o]! += xyz[0] * step;
+    into[o + 1]! += xyz[1] * step;
+    into[o + 2]! += xyz[2] * step;
   }
 }
 const PHOTONS = 60000;
@@ -212,10 +216,12 @@ const gauss = () => Math.sqrt(-2 * Math.log(1 - rand())) * Math.cos(2 * Math.PI 
       const h = hit(o, d, skip);
       if (!h) break;
       track(o, h.p, toXYZw(w));
+      if (bounce === 0) track(o, h.p, toXYZw(w), FLUENCE_E);
       if (h.s.kind === 'black') break;
       if (h.s.kind === 'mirror') {
         for (let i = 0; i < NS; i++) w[i]! *= MIRROR_R;
         d = reflect(d, h.s.n);
+        MIRROR_OUT.push({ p: h.p, d, s: h.s, xyz: toXYZw(w) });
       } else {
         if (dot(d, h.s.n) >= 0) break; // the back of a surface
         const b = h.s.bin * NS;
@@ -240,6 +246,66 @@ export const outgoing = (s: Seg, out: Float64Array) => {
   const b = s.bin * NS;
   for (let i = 0; i < NS; i++) out[i] = (s.albedo![i]! * E[b + i]!) / 2;
 };
+
+// --- T(L): the room acting once on its own light ------------------------------------
+/**
+ * The fluence of T(L), computed by its own trace rather than as L minus E: every
+ * surface sends on, once, what L delivers to it, and the light is carried to
+ * the next surface and stops there. The diffuse walls re-emit from their
+ * irradiance (reflectance times what arrives, cosine-distributed, sampled
+ * afresh, TPHOTONS in all, by power); the mirrors reflect what arrives at
+ * them (the photons of the main trace as they left each mirror). If L is the
+ * equilibrium, the result is L - E, up to Monte Carlo noise: a result, not an
+ * identity of this code. Computed on first use.
+ */
+let FLUENCE_T: Float64Array | null = null;
+const TPHOTONS = 60000;
+function traceT(): Float64Array {
+  const F = new Float64Array(GW * GH * 3);
+  let sd = 0x7654321;
+  const r = () => {
+    sd ^= sd << 13;
+    sd ^= sd >>> 17;
+    sd ^= sd << 5;
+    return (sd >>> 0) / 4294967296;
+  };
+  // The diffuse walls: each bin's outgoing power, reflectance times what arrives.
+  const power: { s: Seg; xyz: [number, number, number] }[] = [];
+  const w = new Float64Array(NS);
+  let total = 0;
+  for (const s of segs) {
+    if (s.bin < 0) continue;
+    const b = s.bin * NS;
+    for (let i = 0; i < NS; i++) w[i] = s.albedo![i]! * E[b + i]! * binLength[s.bin]!;
+    const xyz = toXYZw(w);
+    power.push({ s, xyz });
+    total += xyz[1];
+  }
+  for (const { s, xyz } of power) {
+    const x = (TPHOTONS * xyz[1]) / total; // expected photons from this bin
+    const n = Math.floor(x) + (r() < x - Math.floor(x) ? 1 : 0);
+    const each: [number, number, number] = [xyz[0] / x, xyz[1] / x, xyz[2] / x];
+    for (let k = 0; k < n; k++) {
+      const p = add(s.a, sub(s.b, s.a), r());
+      const st = 2 * r() - 1;
+      const d = unit(add(add(v(0, 0), s.n, Math.sqrt(1 - st * st)), perp(s.n), st));
+      const h = hit(p, d, s);
+      if (h) track(p, h.p, each, F);
+    }
+  }
+  // The mirrors: what arrives, reflected.
+  for (const { p, d, s, xyz } of MIRROR_OUT) {
+    const h = hit(p, d, s);
+    if (h) track(p, h.p, xyz, F);
+  }
+  return F;
+}
+/** The room's light as fluence (XYZ per cell): L, the lamp's alone E, or T(L). */
+export function fluenceOf(which: 'L' | 'E' | 'T'): Float64Array {
+  if (which === 'L') return FLUENCE;
+  if (which === 'E') return FLUENCE_E;
+  return (FLUENCE_T ??= traceT());
+}
 
 // --- Reading the light field back: L(x, ω) ---------------------------------------
 // The lamp's emission, normalised to total power 1 per unit of SUN.
@@ -299,10 +365,62 @@ export const L_REF = (() => {
   return peaks[Math.floor(peaks.length * 0.9)]!;
 })();
 
-/** The walls, in the colour of the light leaving them; the outlines; the room coloured by its light. */
-export function drawRoom(room: THREE.Group): void {
+/** Blur a fluence grid twice, 3 x 3, against Monte Carlo grain. */
+function blurred(F: Float64Array): Float64Array {
+  let f = F;
+  for (let pass = 0; pass < 2; pass++) {
+    const g = new Float64Array(f.length);
+    for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) for (let c = 0; c < 3; c++) {
+      let sum = 0;
+      let n = 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const xx = x + dx;
+        const yy = y + dy;
+        if (xx < 0 || yy < 0 || xx >= GW || yy >= GH) continue;
+        sum += f[(yy * GW + xx) * 3 + c]!;
+        n++;
+      }
+      g[(y * GW + x) * 3 + c] = sum / n;
+    }
+    f = g;
+  }
+  return f;
+}
+/**
+ * The exposure of a fluence grid: the 90th percentile of the lit cells (inside
+ * the beam the light is far brighter, and saturates; the bounced light sits low
+ * and dark).
+ */
+export function exposureOf(F: Float64Array): number {
+  const f = blurred(F);
+  const Ys: number[] = [];
+  for (let i = 0; i < GW * GH; i++) if (f[i * 3 + 1]! > 0) Ys.push(f[i * 3 + 1]!);
+  Ys.sort((a, b) => a - b);
+  return Ys[Math.floor(Ys.length * 0.9)]! * 1.2;
+}
+
+/**
+ * The walls, in the colour of the light leaving them; the outlines; the room
+ * coloured by its light. Options: another fluence to colour the room by (E or
+ * T(L) from fluenceOf), its exposure (to share one between panels), and
+ * `walls: false` to draw the walls as a plain outline instead (for E, where no
+ * light leaves them).
+ */
+export function drawRoom(room: THREE.Group, opts: { fluence?: Float64Array; exposure?: number; walls?: boolean } = {}): void {
+  const { fluence = FLUENCE, walls = true } = opts;
   // The walls, in the colour and brightness of the light leaving them.
-  {
+  if (!walls) {
+    const hx = ROOM_HALF.x - ROOM_R;
+    const hy = ROOM_HALF.y - ROOM_R;
+    const pts: [number, number, number][] = [];
+    for (const [cx, cy, a0] of [[hx, hy, 0], [-hx, hy, 90], [-hx, -hy, 180], [hx, -hy, 270]] as const)
+      for (let k = 0; k <= 6; k++) {
+        const q = add(v(cx, cy), fromAngle(a0 + (90 * k) / 6), ROOM_R);
+        pts.push([q.x, q.y, 0]);
+      }
+    pts.push(pts[0]!);
+    room.add(polyline(pts, { color: C.slateDeep, width: 5 }));
+  } else {
     const tmp = new Float64Array(NS);
     const Yref = toXYZ(spectrum(() => L_REF))[1];
     for (const s of segs) {
@@ -323,30 +441,8 @@ export function drawRoom(room: THREE.Group): void {
   }
   // The room, coloured by the light in it: the fluence image, tone-mapped.
   {
-    // Blur twice, 3 x 3, against Monte Carlo grain.
-    let f = FLUENCE;
-    for (let pass = 0; pass < 2; pass++) {
-      const g = new Float64Array(f.length);
-      for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) for (let c = 0; c < 3; c++) {
-        let sum = 0;
-        let n = 0;
-        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-          const xx = x + dx;
-          const yy = y + dy;
-          if (xx < 0 || yy < 0 || xx >= GW || yy >= GH) continue;
-          sum += f[(yy * GW + xx) * 3 + c]!;
-          n++;
-        }
-        g[(y * GW + x) * 3 + c] = sum / n;
-      }
-      f = g;
-    }
-    // The exposure: the 90th percentile of the lit cells (inside the beam the
-    // light is far brighter, and saturates; the bounced light sits low and dark).
-    const Ys: number[] = [];
-    for (let i = 0; i < GW * GH; i++) if (f[i * 3 + 1]! > 0) Ys.push(f[i * 3 + 1]!);
-    Ys.sort((a, b) => a - b);
-    const Yref = Ys[Math.floor(Ys.length * 0.9)]! * 1.2;
+    const f = blurred(fluence);
+    const Yref = opts.exposure ?? exposureOf(fluence);
     const data = new Uint8Array(GW * GH * 4);
     const hx = ROOM_HALF.x - ROOM_R;
     const hy = ROOM_HALF.y - ROOM_R;
