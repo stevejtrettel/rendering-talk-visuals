@@ -26,6 +26,20 @@
  * the cells here rather than a similar-looking curve. Every spectrum is a lit
  * combination of three broad positive reflectances: the kind of thing a real
  * surface returns, with nothing fitted to the CIE curves.
+ *
+ * ## `?scene=box`: our own scene instead of the still life
+ *
+ * Steve, 2026-10-29: do this with one of our actual 3D images. The spectra
+ * are then a spectral render of rendering-visualizer's cornell-short, the box
+ * of the talk's Part I and its pinhole slide, at 16 × 16 from the scene camera:
+ * real light transport, wavelength by wavelength (that repo's
+ * scripts/bake-spectral-short.ts, which states the reflectance and lamp
+ * spectra it chose), stored in src/data/short-box-spectra.json at 33
+ * wavelengths and interpolated onto this grid. One readability choice:
+ * exposure, a single scale on every spectrum, so the 90th-percentile pixel
+ * sits at Y = 0.85 (the lamp is far brighter, and clips); and the drawn
+ * curves and bars take their scale from the same typical bright cell, so the
+ * lamp's run off the top of their cells rather than flattening every other.
  */
 
 import * as THREE from 'three';
@@ -35,6 +49,8 @@ import { label } from '@/text';
 import { NS } from '@/room2d';
 import { CHANNEL_NAMES, xyzToDisplay } from '@/response';
 import { RESP, spectrumAt, project } from '@/still-life';
+import { wavelength } from '@/room2d';
+import BOX from '@/data/short-box-spectra.json';
 
 // ---------------------------------------------------------------------------
 // Layout
@@ -93,12 +109,36 @@ interface Cell {
 const cells: Cell[] = [];
 let curveMax = 1e-9;
 
+const SCENE_BOX = new URLSearchParams(location.search).get('scene') === 'box';
+/** Cell (i, j)'s spectrum in the box render, on the shared grid, unexposed. */
+function boxSpectrum(i: number, j: number, out: Float32Array): Float32Array {
+  const src = BOX.spectra[j * BOX.res + i]!;
+  for (let k = 0; k <= NS; k++) {
+    const nm = wavelength(k);
+    const f = ((nm - BOX.nm[0]!) / (BOX.nm[BOX.nm.length - 1]! - BOX.nm[0]!)) * (BOX.nm.length - 1);
+    const a = Math.min(Math.floor(f), BOX.nm.length - 2);
+    out[k] = src[a]! + (src[a + 1]! - src[a]!) * (f - a);
+  }
+  return out;
+}
+const BOX_EXPOSURE = (() => {
+  if (!SCENE_BOX) return 1;
+  const spec = new Float32Array(NS + 1);
+  const Ys: number[] = [];
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) Ys.push(project(boxSpectrum(i, j, spec))[1]);
+  Ys.sort((a, b) => a - b);
+  return 0.85 / Ys[Math.floor(Ys.length * 0.9)]!;
+})();
+
 {
   const spec = new Float32Array(NS + 1);
   for (let j = 0; j < N; j++) {
     for (let i = 0; i < N; i++) {
       // The cell's spectrum, on the shared grid, and the value it produces.
-      spectrumAt((i + 0.5) / N, 1 - (j + 0.5) / N, spec);
+      if (SCENE_BOX) {
+        boxSpectrum(i, j, spec);
+        for (let k = 0; k <= NS; k++) spec[k]! *= BOX_EXPOSURE;
+      } else spectrumAt((i + 0.5) / N, 1 - (j + 0.5) / N, spec);
       const value = project(spec);
 
       // A coarser copy for drawing.
@@ -117,10 +157,17 @@ let curveMax = 1e-9;
     }
   }
 }
-for (const cell of cells) for (let q = 0; q <= SAMP; q++) cell.curve[q] /= curveMax;
+/** In the box, a scale from the typical bright cell (the 90th percentile), not
+ *  the lamp, which is far brighter: its curves and bars clip at the top of
+ *  their cell. A drawing scale only; the colours are untouched. */
+const p90 = (xs: number[]) => xs.sort((a, b) => a - b)[Math.floor(xs.length * 0.9)]! * 1.1;
+if (SCENE_BOX) curveMax = p90(cells.map((c) => Math.max(...c.curve)));
+for (const cell of cells) for (let q = 0; q <= SAMP; q++) cell.curve[q] = Math.min(1, cell.curve[q] / curveMax);
 
 /** The tallest value anywhere in the picture, so bars share one scale. */
-const VMAX = cells.reduce((m, c) => Math.max(m, c.value[0], c.value[1], c.value[2]), 1e-9);
+const VMAX = SCENE_BOX
+  ? p90(cells.map((c) => Math.max(...c.value)))
+  : cells.reduce((m, c) => Math.max(m, c.value[0], c.value[1], c.value[2]), 1e-9);
 
 // ---------------------------------------------------------------------------
 // The mini spectra — one mesh for all 256
@@ -314,7 +361,7 @@ stage.frame((t) => {
       for (let c = 0; c < 3; c++, b++) {
         const barX = cx + (c - 1) * CELL * 0.29;
         const barW = CELL * 0.2;
-        const barH = Math.max((cell.value[c] / VMAX) * CELL * 0.84 * rise, 1e-5);
+        const barH = Math.max(Math.min(cell.value[c] / VMAX, 1) * CELL * 0.84 * rise, 1e-5);
 
         // Bars grow from the cell's baseline and stay on it as they merge, so
         // the finished pixel fills the cell from the bottom up.
