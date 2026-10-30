@@ -150,6 +150,11 @@ export const INFO: Record<string, DemoInfo> = {
       'A camera outside the open front, a grid of pixels on its image plane, and every pixel filled by one ray and one lookup: hit the first surface, read the radiance already stored there in the direction back to the eye. Nothing bounces — not even on the glossy sphere, whose stored fiber is view-dependent and answers the question directly. 4,096 pixels, 16,384 rays, zero bounces.',
     section: 'Light Fields in 3D',
   },
+  'light-field-pinhole': {
+    title: 'A Pinhole Camera in 3D',
+    blurb: 'light-field-image with the camera made a box: a pinhole at the eye, the sensor behind it. Each pixel reads the stored light field along the one ray through the pinhole onto it; the image lands on the sensor upside down.',
+    section: 'Modeling Light',
+  },
   'light-field-scan': {
     title: 'Storing a Light Field — 7. Watching the Memory Get Read',
     blurb:
