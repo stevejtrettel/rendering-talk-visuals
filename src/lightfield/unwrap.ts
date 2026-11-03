@@ -190,6 +190,8 @@ const FOREST_FRAG = /* glsl */ `
   uniform vec2 chartCells;
   uniform float bins;
   uniform float collapse;
+  uniform sampler2D glowN; // per-bin excitation over the nested image, r channel
+  uniform float glowGain;  // 0 for every demo that does not read bins
   varying vec2 vUv;
   varying vec2 vCell;
   varying float vRise;
@@ -215,6 +217,11 @@ const FOREST_FRAG = /* glsl */ `
     vec2 wo = max(fwidth(vUv), vec2(1e-5));
     float dOuter = min(go.x / wo.x, go.y / wo.y);
     c = mix(c, c * 0.32, (1.0 - smoothstep(0.6, 1.6, dOuter)) * collapse);
+
+    // A bin being read (light-field-camera): the same cursor the sheets use.
+    if (glowGain > 0.0) {
+      c += vec3(1.9, 1.6, 0.9) * texture2D(glowN, (vCell + vUv) / chartCells).r * glowGain;
+    }
 
     gl_FragColor = vec4(c, 1.0);
     #include <tonemapping_fragment>
@@ -334,6 +341,8 @@ export interface Unwrap {
   highlight(chartIdx: number | null, lx?: number, ly?: number): void;
   /** The material the room draws a chart with, for demos that light texels. */
   chartMaterial(chartIdx: number): THREE.ShaderMaterial | null;
+  /** The forest's material for a chart (its nested tiles), for demos that light bins. */
+  forestMaterial(chartIdx: number): THREE.ShaderMaterial | null;
   boxes: { close: THREE.Box3; room: THREE.Box3; net: THREE.Box3; floor: THREE.Box3 };
   counts: { pixels: number; cells: number; bins: number };
   pickTargets: THREE.Object3D[];
@@ -712,6 +721,7 @@ export async function createUnwrap(stage: Stage): Promise<Unwrap> {
   // the same physical space. 64× the cells, no more room.
 
   const forestMats: THREE.ShaderMaterial[] = [];
+  const forestByChart = new Map<number, THREE.ShaderMaterial>();
   const forest = new THREE.Group();
   forest.visible = false;
   stage.scene.add(forest);
@@ -757,12 +767,15 @@ export async function createUnwrap(stage: Stage): Promise<Unwrap> {
         flySize: { value: 3.2 },
         bins: { value: c.dbins },
         collapse: { value: 0 },
+        glowN: { value: NO_GLOW },
+        glowGain: { value: 0 },
       },
       vertexShader: FOREST_VERT,
       fragmentShader: FOREST_FRAG,
       side: THREE.DoubleSide,
     });
     forestMats.push(mat);
+    forestByChart.set(i, mat);
     const mesh = new THREE.Mesh(quad, mat);
     mesh.frustumCulled = false;
     mesh.renderOrder = 2;
@@ -787,6 +800,7 @@ export async function createUnwrap(stage: Stage): Promise<Unwrap> {
     qc,
     sphereChart,
     texel: TEXEL,
+    forestMaterial: (i: number) => forestByChart.get(i) ?? null,
     setPeel,
     setForest,
     createLoupe,

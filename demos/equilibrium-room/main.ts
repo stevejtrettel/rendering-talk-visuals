@@ -17,6 +17,10 @@
  * equilibrium's (light-field-room's), so they compare. Each guess steps in
  * discretely, panel by panel: nothing here is time passing.
  *
+ * ?panels=invert (the light-field deck, Steve 2026-10-30): E and the
+ * equilibrium with an arrow between them, the map E -> (Id - T)^-1 E; no labels
+ * in the frame, the deck sets them (KaTeX) over the picture.
+ *
  * Other modes, kept: ?panels=three draws L = E + T(L) for the equilibrium
  * computed by light tracing, T(L) by its own trace (a check that the computed
  * L satisfies it, to Monte Carlo noise); ?panels=question draws E and that L
@@ -48,7 +52,15 @@ function roomAt(x: number, s: number, fluence: Float64Array | null, walls: boole
 const nameUnder = (x: number, s: number, text: string) =>
   label(text, { size: 0.3, color: C.bone, anchorX: 'center', anchorY: 'top', position: [x, -ROOM_HALF.y * s - 0.25, 0] });
 
-if (MODE === 'question' || MODE === 'three') {
+if (MODE === 'invert') {
+  stage.duration = 1;
+  const S = 0.38;
+  for (const [which, x] of [['E', -2.75], ['L', 2.75]] as const) roomAt(x, S, fluenceOf(which), which !== 'E');
+  const x0 = -2.75 + ROOM_HALF.x * S + 0.18;
+  const x1 = 2.75 - ROOM_HALF.x * S - 0.18;
+  stage.add(polyline([[x0, 0, 0], [x1, 0, 0]], { color: C.bone, width: 3 }));
+  stage.add(polyline([[x1 - 0.14, 0.11, 0], [x1, 0, 0], [x1 - 0.14, -0.11, 0]], { color: C.bone, width: 3 }));
+} else if (MODE === 'question' || MODE === 'three') {
   stage.duration = 1;
   const S = MODE === 'question' ? 0.46 : 0.295;
   const panels: [string, 'L' | 'E' | 'T', number][] =

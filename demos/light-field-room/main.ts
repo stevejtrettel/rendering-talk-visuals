@@ -83,6 +83,18 @@ const arrowHead = new THREE.Mesh(
 probeDot.position.z = arrowHead.position.z = 0.03;
 room.add(dial, arrowShaft, arrowHead, probeDot);
 
+// `?back`: the ray followed back to the surface it left, and there the point
+// and direction the value is read at, a point and tangent vector on the
+// boundary (Steve, 2026-10-30: the storing slide in Part IV).
+const BACK = new URLSearchParams(location.search).has('back');
+const backRay = polyline([[0, 0, 0], [0, 0, 0]], { color: C.bone, width: 3, dashed: true, dashSize: 0.12, gapSize: 0.09 });
+const footDot = new THREE.Mesh(new THREE.CircleGeometry(0.09, 24), flat(C.bone));
+const footShaft = polyline([[0, 0, 0], [0, 0, 0]], { color: C.bone, width: 5 });
+const footHead = arrowHead.clone();
+footDot.position.z = footHead.position.z = 0.03;
+backRay.visible = footDot.visible = footShaft.visible = footHead.visible = BACK;
+room.add(backRay, footShaft, footHead, footDot);
+
 
 // --- The graph ---------------------------------------------------------------------
 const G = { x0: 2.0, x1: 5.05, y0: -1.05, y1: 1.35 };
@@ -131,6 +143,17 @@ function update(): void {
     const q = add(probe, fromAngle((360 * k) / 48), DIAL);
     return [q.x, q.y, 0.02] as [number, number, number];
   }));
+  // The ray back to the boundary, and the point and direction read there.
+  const foot = path[1];
+  if (BACK && foot) {
+    setPolyline(backRay, [[probe.x, probe.y, 0.01], [foot.x, foot.y, 0.01]]);
+    backRay.computeLineDistances();
+    footDot.position.set(foot.x, foot.y, 0.03);
+    const ftip = add(foot, w, ARROW * 0.7);
+    setPolyline(footShaft, [[foot.x, foot.y, 0.02], [ftip.x, ftip.y, 0.02]]);
+    footHead.position.set(ftip.x, ftip.y, 0.03);
+    footHead.rotation.z = arrowHead.rotation.z;
+  }
   // The graph.
   const pos = fillGeom.attributes.position as THREE.BufferAttribute;
   let over = false;

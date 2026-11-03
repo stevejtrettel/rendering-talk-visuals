@@ -857,7 +857,21 @@ const params = {
   rays: true,
   resolution: 0.35,
   supersample: 2,
+  /**
+   * The wavelength on a log scale, for the light-field deck (Steve,
+   * 2026-10-29): a slider under the picture, labelled wavelength, that follows
+   * the ramp toward smaller wavelengths, and that you can grab. Log, so the
+   * marker moves at the ramp's own even pace. The far left end, past the
+   * smallest wavelength, is the limit itself, ray optics: as the ramp's rays
+   * come up and the wave goes, the marker slides on to that end, and dragging
+   * there by hand does the same. Grabbing it stops the ramp.
+   */
+  logWavelength: Math.log(0.12),
 };
+/** The stretch of the slider, past the smallest wavelength, that is the ray limit. */
+const LIMIT_GAP = 0.6;
+const LOG_MIN = Math.log(LAMBDA_MIN);
+let manual = false;
 ui.params.add(params, 'ramp').name('shrink wavelength');
 ui.params.add(params, 'wavelength', LAMBDA_MIN, LAMBDA_MAX, 0.001).name('wavelength');
 ui.params.add(params, 'display', ['intensity', 'field']).name('display');
@@ -865,6 +879,14 @@ ui.params.add(params, 'exposure', 0.1, 8, 0.05).name('exposure');
 ui.params.add(params, 'rays').name('ray overlay');
 ui.params.add(params, 'resolution', 0.15, 1, 0.05).name('field resolution');
 ui.params.add(params, 'supersample', 1, 3, 1).name('supersamples');
+ui.params
+  .add(params, 'logWavelength', LOG_MIN - LIMIT_GAP, Math.log(LAMBDA_MAX), 0.001)
+  .name('wavelength')
+  .onChange((x: number) => {
+    params.ramp = false;
+    manual = true;
+    params.wavelength = Math.exp(Math.max(x, LOG_MIN));
+  });
 
 // ---------------------------------------------------------------------------
 // Update
@@ -886,6 +908,7 @@ stage.frame((t) => {
   const lambda = params.ramp
     ? LAMBDA_MAX * Math.pow(LAMBDA_MIN / LAMBDA_MAX, u)
     : params.wavelength;
+
   const k = (2 * Math.PI) / lambda;
 
   const stages = buildStages(lambda);
@@ -929,14 +952,21 @@ stage.frame((t) => {
     return c * c * (3 - 2 * c);
   };
 
-  const rayAlpha = params.ramp ? smooth(held / RAY_FADE) : params.rays ? 1 : 0;
+  // Dragged into the limit stretch: the first half brings the rays up, the
+  // second takes the wave away, as the ramp's tail does.
+  const into = manual ? Math.min(1, Math.max(0, (LOG_MIN - params.logWavelength) / LIMIT_GAP)) : 0;
+  const rayAlpha = params.ramp ? smooth(held / RAY_FADE) : manual ? smooth(2 * into) : params.rays ? 1 : 0;
 
   // ...and then the field itself goes, leaving ray optics holding the frame.
   // Opacity, not exposure: the field being drawn is the same field throughout,
   // and dimming it through the tone curve would look like the physics changing.
   const waveAlpha = params.ramp
     ? 1 - smooth((held - (RAY_FADE + BOTH_HOLD)) / WAVE_FADE)
-    : 1;
+    : manual
+      ? 1 - smooth(2 * into - 1)
+      : 1;
+  // The marker follows the ramp, and on into the limit as the rays come up and the wave goes.
+  if (params.ramp) params.logWavelength = Math.log(lambda) - LIMIT_GAP * (rayAlpha + (1 - waveAlpha)) / 2;
   (screen.material as THREE.MeshBasicMaterial).opacity = waveAlpha;
   screen.visible = waveAlpha > 0.002;
 

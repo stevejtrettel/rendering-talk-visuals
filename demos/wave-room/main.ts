@@ -324,6 +324,8 @@ const DISPLAY_FRAG = /* glsl */ `
   uniform vec3 uInk;
   uniform vec2 uSrcPos;
   uniform float uShowSrc;
+  uniform float uSplit;    // 1 = two panels: the field at the left, the brightness at the right
+  uniform float uPanel;    // a panel's scale against the whole frame
 
   varying vec2 vUv;
 
@@ -357,6 +359,15 @@ const DISPLAY_FRAG = /* glsl */ `
 
   void main() {
     vec2 p = mix(uMin, uMax, vUv);
+    float mixv = uMix;
+    float outside = 0.0;
+    if (uSplit > 0.5) {
+      // Both panels read the same state: one solve, drawn twice.
+      bool right = p.x > 0.0;
+      p = (p - vec2((right ? 0.5 : -0.5) * uMax.x, 0.0)) / uPanel;
+      outside = (abs(p.x) > uMax.x || abs(p.y) > uMax.y) ? 1.0 : 0.0;
+      mixv = right ? 1.0 : 0.0;
+    }
     float d = air(p);
     vec4 s = sampleState(p);
 
@@ -375,7 +386,7 @@ const DISPLAY_FRAG = /* glsl */ `
       float a = s.r * uGain;
       float m = 1.0 - exp(-abs(a));
       col = (a > 0.0 ? uWarm : uCool) * m;
-      col = mix(col, avg, uMix);
+      col = mix(col, avg, mixv);
     }
 
     // The walls, straight off the same SDF: a lit rim on the surface falling to
@@ -396,7 +407,7 @@ const DISPLAY_FRAG = /* glsl */ `
       col = mix(col, uInk, 1.0 - smoothstep(0.0, max(fwidth(ring), 1e-5), ring));
     }
 
-    fragColor = vec4(col, 1.0);
+    fragColor = vec4(col * (1.0 - outside), 1.0);
   }
 `;
 
@@ -425,6 +436,14 @@ const BEAM_WAIST = 0.42;
  */
 const AVG_WINDOW = 1.0;
 const SWITCH = 0.6;
+/**
+ * `?scene=beam&split`: the two views side by side instead of a toggle (Steve,
+ * 2026-10-29), so the field oscillating and the brightness settling are seen
+ * at once. One solve, drawn twice: the right panel is the left one's running
+ * average, not a second simulation.
+ */
+const SPLIT = BEAM && new URLSearchParams(location.search).has('split');
+const PANEL = 0.48;
 
 const simScene = new THREE.Scene();
 const simCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -474,6 +493,8 @@ const displayMat = new THREE.ShaderMaterial({
     uInk: { value: new THREE.Color(C.bone) },
     uSrcPos: { value: new THREE.Vector2() },
     uShowSrc: { value: 1 },
+    uSplit: { value: SPLIT ? 1 : 0 },
+    uPanel: { value: PANEL },
   },
   defines: SCENE_DEFINES,
   vertexShader: QUAD_VERT,
@@ -553,7 +574,7 @@ ui.params.add(params, 'exposure', 0.05, 8, 0.05).name('exposure');
 ui.params.add(params, 'autoGain').name('auto gain');
 ui.params.add(params, 'grid', GRIDS).name('grid width');
 ui.params.add(params, 'marker').name('source marker');
-if (BEAM) ui.params.add(params, 'view', ['wave', 'brightness']);
+if (BEAM && !SPLIT) ui.params.add(params, 'view', ['wave', 'brightness']);
 
 // What is being plotted, in the frame (beam scene only).
 const viewLabel = (text: string) => {
@@ -566,6 +587,15 @@ const viewLabel = (text: string) => {
 };
 const fieldLabel = viewLabel('electric field');
 const brightLabel = viewLabel('brightness (time average)');
+// In the split view each panel is named under it instead.
+const panelLabel = (text: string, x: number) => {
+  const l = label(text, { size: 0.2, color: C.bone, anchorX: 'center', anchorY: 'top', position: [x, -PANEL * ORTHO_H - 0.14, 1] });
+  l.visible = SPLIT;
+  stage.add(l);
+  return l;
+};
+panelLabel('electric field', -HALF_W / 2);
+panelLabel('brightness (time average)', HALF_W / 2);
 // ---------------------------------------------------------------------------
 // Marching
 // ---------------------------------------------------------------------------
@@ -693,7 +723,7 @@ stage.frame((t) => {
   for (const [l, o] of [[fieldLabel, 1 - uni.uMix.value], [brightLabel, uni.uMix.value]] as const) {
     l.fillOpacity = o;
     l.outlineOpacity = o;
-    l.visible = BEAM && o > 0.01;
+    l.visible = BEAM && !SPLIT && o > 0.01;
   }
   // The beam scene's steady state is bright (a driven beam, nothing decaying): a quarter of the gain.
   uni.uAvgGain.value = params.exposure * AVG_GAIN * (BEAM ? 0.25 : 1);

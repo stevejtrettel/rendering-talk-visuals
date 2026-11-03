@@ -119,6 +119,7 @@ function reconstruct(r: number, g: number, b: number): [number, number, number] 
 // --- one blade per texel that holds data ---------------------------------
 const positions: number[] = [];
 const weights: number[] = [];
+const rgbs: number[] = [];
 const seeds: number[] = [];
 const peaks: number[] = [];
 
@@ -148,6 +149,7 @@ for (let ci = 0; ci < u.charts.length; ci++) {
       const p = u.cellCentre(ci, lx, ly);
       positions.push(p.x, p.y, p.z);
       weights.push(w[0], w[1], w[2]);
+      rgbs.push(surf[o], surf[o + 1], surf[o + 2]);
       // Deterministic arrival order. Never Math.random(): the exporter
       // re-runs this per frame and the video would boil.
       seeds.push(((Math.sin(ci * 12.9898 + lx * 78.233 + ly * 37.719) * 43758.5453) % 1 + 1) % 1);
@@ -170,6 +172,16 @@ const sorted = peaks.filter((_p, i) => !emitters[i]).sort((a, b) => a - b);
 const quantile = sorted[Math.floor(0.97 * (sorted.length - 1))] || 1;
 const GAIN = TALL / quantile;
 
+// `?rgb` (Steve, 2026-10-30): after the slide on commuting R with the lens,
+// the same field, and the linear map R run on every curve, turning each
+// spectrum into its three stored numbers: bars, blue, green, red, left to
+// right as wavelength runs. One gain for every bar, from the same kind of
+// quantile as the curves.
+const RGB_MODE = new URLSearchParams(location.search).has('rgb');
+const barPeaks = peaks.map((_p, i) => Math.max(rgbs[3 * i]!, rgbs[3 * i + 1]!, rgbs[3 * i + 2]!));
+const barSorted = barPeaks.filter((_p, i) => !emitters[i]).sort((a, b) => a - b);
+const BAR_GAIN = (0.8 * TALL) / (barSorted[Math.floor(0.97 * (barSorted.length - 1))] || 1);
+
 // --- geometry ------------------------------------------------------------
 // A ribbon from the sheet up to the curve, instanced once per texel. The
 // curve itself is the ribbon's top edge, brightened in the fragment
@@ -191,6 +203,7 @@ strip.setIndex(index);
 strip.setAttribute('iPos', new THREE.InstancedBufferAttribute(new Float32Array(positions), 3));
 strip.setAttribute('iW', new THREE.InstancedBufferAttribute(new Float32Array(weights), 3));
 strip.setAttribute('iSeed', new THREE.InstancedBufferAttribute(new Float32Array(seeds), 1));
+strip.setAttribute('iRGB', new THREE.InstancedBufferAttribute(new Float32Array(rgbs), 3));
 strip.instanceCount = COUNT;
 strip.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e4);
 
@@ -217,9 +230,15 @@ const material = new THREE.ShaderMaterial({
     basis: { value: basisTex },
     gain: { value: GAIN },
     bladeW: { value: 0.92 }, // texels. Just under 1, so blades do not merge.
-    band: { value: 0.34 }, // ink thickness under the curve, in texels
+    band: { value: 0.42 }, // ink thickness under the curve, in texels
     rise: { value: 0 },
     ink: { value: ink },
+    toBars: { value: 0 },
+    barGain: { value: BAR_GAIN },
+    // The channels' own colours, softened to sit in the deck's palette.
+    colB: { value: new THREE.Color(0x7d9be0).convertSRGBToLinear() },
+    colG: { value: new THREE.Color(0x8cc47a).convertSRGBToLinear() },
+    colR: { value: new THREE.Color(0xe0735e).convertSRGBToLinear() },
   },
   vertexShader: /* glsl */ `
     attribute float aU;
@@ -227,7 +246,11 @@ const material = new THREE.ShaderMaterial({
     attribute vec3 iPos;
     attribute vec3 iW;
     attribute float iSeed;
+    attribute vec3 iRGB;
     uniform sampler2D basis;
+    uniform float toBars;
+    uniform float barGain;
+    varying float vU;
     uniform float gain;
     uniform float bladeW;
     uniform float rise;
@@ -242,6 +265,15 @@ const material = new THREE.ShaderMaterial({
       float local = ease(clamp(rise * 1.7 - iSeed * 0.7, 0.0, 1.0));
       vec3 b = texture2D(basis, vec2(aU, 0.5)).rgb;
       float val = max(dot(b, iW), 0.0) * gain * local;
+      // The bars: three flat steps across the blade, B | G | R, with a gap
+      // between them. Morphing is a straight blend of the two heights.
+      float third = floor(clamp(aU, 0.0, 0.9999) * 3.0);
+      float f = fract(clamp(aU, 0.0, 0.9999) * 3.0);
+      float c = third < 0.5 ? iRGB.b : (third < 1.5 ? iRGB.g : iRGB.r);
+      float gap = step(0.12, f) * step(f, 0.88);
+      float bar = c * barGain * gap * local;
+      val = mix(val, bar, toBars);
+      vU = aU;
       float y = aSide * val;
       vVal = val;
       vY = y;
@@ -252,8 +284,13 @@ const material = new THREE.ShaderMaterial({
   fragmentShader: /* glsl */ `
     uniform vec3 ink;
     uniform float band;
+    uniform float toBars;
+    uniform vec3 colB;
+    uniform vec3 colG;
+    uniform vec3 colR;
     varying float vY;
     varying float vVal;
+    varying float vU;
 
     void main() {
       // Distance below the curve, in world units, so the ink band is a
@@ -261,7 +298,10 @@ const material = new THREE.ShaderMaterial({
       // a fraction would make tall curves fat and short ones hairlines.
       float d = vVal - vY;
       float k = 1.0 - smoothstep(0.0, band, d);
-      gl_FragColor = vec4(ink * mix(0.55, 1.0, k), mix(0.16, 1.0, k));
+      float third = floor(clamp(vU, 0.0, 0.9999) * 3.0);
+      vec3 chan = third < 0.5 ? colB : (third < 1.5 ? colG : colR);
+      vec3 col = mix(ink, chan * 0.6, toBars);
+      gl_FragColor = vec4(col * mix(0.6, 1.0, k), mix(mix(0.3, 1.0, k), 0.95, toBars));
       #include <tonemapping_fragment>
       #include <colorspace_fragment>
     }
@@ -283,7 +323,9 @@ const HOLD = 1.8;
 // keeps cos θ of its length, so there is plenty of room to tilt: this sits
 // near 53°, where the curves still read side-on and the sheets under them
 // are not crushed to grazing.
-const OVERHEAD = new THREE.Vector3(0, 0.88, 0.66);
+// Lowered further (Steve, 2026-10-30: see the spectra at each point better):
+// about 32°, so each curve reads side-on as a graph.
+const OVERHEAD = new THREE.Vector3(0, 0.62, 1);
 
 // Both boxes are the sheet plus exactly the blade height. Padding the box
 // vertically "to be safe" is what kept the close shot far away: frameBox
@@ -309,9 +351,29 @@ applyShot(stage, WIDE);
 // Ramps to a result and parks on it, so the export ends on the answer.
 stage.captureEnd = stage.duration - HOLD;
 
+// The sheets dim as the curves rise, so the ink reads against them: the
+// colour is still there underneath, but the curves are the subject.
+const sheetMats = u.charts.map((_, i) => u.chartMaterial(i)).filter((m): m is THREE.ShaderMaterial => !!m);
+
+if (RGB_MODE) {
+  // Opens where the plain demo ends (curves up, close shot, sheets dim),
+  // then runs R.
+  stage.duration = 9;
+  stage.captureEnd = 5;
+}
+
 stage.frame((t) => {
+  if (RGB_MODE) {
+    material.uniforms.rise.value = 1;
+    for (const m of sheetMats) m.uniforms.fade.value = 0.32;
+    applyShot(stage, CLOSE);
+    material.uniforms.toBars.value = smootherstep(ramp(t, 1.5, 3.0));
+    return;
+  }
   const rise = smootherstep(ramp(t, 0.7, stage.duration - HOLD - 0.7));
   material.uniforms.rise.value = rise;
+  const dim = 1 - 0.68 * smootherstep(ramp(t, 0.7, 2.5));
+  for (const m of sheetMats) m.uniforms.fade.value = dim;
   lerpShot(stage, WIDE, CLOSE, rise);
 });
 

@@ -89,10 +89,20 @@ const MORPH = 0.72;
 /** Held on the crunched state at the end. */
 const TAIL = 2.6;
 
+/**
+ * Two URL modes for the light-field deck (Steve, 2026-10-29), defaults
+ * unchanged: `?bare` drops the contraction-constant readout and the leader to
+ * "the fixed point" (the ring stays); `?left` moves the picture into the left
+ * half of the frame, so a slide can set a statement in the right half.
+ */
+const QUERY = new URLSearchParams(location.search);
+const BARE = QUERY.has('bare');
+const VIEW_X = QUERY.has('left') ? (2.8 * 16) / 9 / 2 : 0;
+
 const stage = createStage({
   camera: 'ortho',
-  position: [0, 0, 10],
-  target: [0, 0, 0],
+  position: [VIEW_X, 0, 10],
+  target: [VIEW_X, 0, 0],
   orthoHeight: 2.8,
   lights: false,
   controls: false,
@@ -299,7 +309,7 @@ stage.add(polyline(ringPts, { color: C.bone, width: 2.2 }));
 // The naming sits out in the margin on a leader, because the centre is exactly
 // where the picture gets busiest — everything ends up on top of this point.
 const LEAD_ANGLE = -0.7;
-stage.add(
+if (!BARE) stage.add(
   polyline(
     [
       [FIXED[0] + (RING + 0.05) * Math.cos(LEAD_ANGLE), FIXED[1] + (RING + 0.05) * Math.sin(LEAD_ANGLE), 0.2],
@@ -330,7 +340,8 @@ const cLabel = label('', {
   position: [-4.75, 2.55, 0.2],
 });
 
-stage.add(iterLabel, cLabel);
+stage.add(iterLabel);
+if (!BARE) stage.add(cLabel);
 
 // ---------------------------------------------------------------------------
 // Controls

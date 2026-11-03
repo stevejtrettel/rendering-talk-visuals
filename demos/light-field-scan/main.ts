@@ -143,8 +143,14 @@ const CAM: PinholeCamera = {
   // drawn — since the ray through a pixel is the same ray at any plane distance.
   planeDist: 0.8,
 };
+// `?lens` (Steve, 2026-10-30: "let's fix ourselves a single thin-lens
+// camera"): a thin lens at the eye, focused on the sphere, wide open so the
+// blur off the plane of focus is plain. Each pixel then averages 36 rays
+// through the aperture, each one a lookup in the stored field.
+const LENS = new URLSearchParams(location.search).has('lens');
+if (LENS) CAM.lens = { radius: 0.18, focus: 3.05 };
 const RES = 64;
-const SPP = 4;
+const SPP = LENS ? 36 : 4;
 
 const img = renderImage(u.bundle, CAM, RES, RES, SPP);
 
@@ -288,6 +294,18 @@ function reveal(px: number, py: number): void {
 const eyeDot = new THREE.Mesh(new THREE.SphereGeometry(0.22 * S * 0.25, 20, 14), flat(C.bone));
 eyeDot.position.copy(eyePos);
 stage.add(eyeDot);
+// With a lens, the eye is the lens: a disk of the aperture's radius, facing
+// the room, drawn faint so the rays through it still read.
+if (LENS) {
+  eyeDot.visible = false;
+  const disk = new THREE.Mesh(
+    new THREE.CircleGeometry(CAM.lens!.radius * S, 48),
+    new THREE.MeshBasicMaterial({ color: C.bone, transparent: true, opacity: 0.55, side: THREE.DoubleSide }),
+  );
+  disk.position.copy(eyePos);
+  disk.lookAt(scaled(CAM.target));
+  stage.add(disk);
+}
 
 const PLANE_CORNERS = ([
   [-1, -1],

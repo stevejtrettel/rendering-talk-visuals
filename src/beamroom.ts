@@ -57,6 +57,16 @@ const CELL = (2 * ROOM_HALF.x) / GW;
 const FLUENCE = new Float64Array(GW * GH * 3); // XYZ
 /** The same, of the lamp's light alone: each photon's track before it first meets anything (E). */
 const FLUENCE_E = new Float64Array(GW * GH * 3);
+/**
+ * The same, split by how many times the light has interacted (a mirror or a
+ * wall) since it left the lamp: [0] is E, [n] is T^n E, the last holds every
+ * bounce from BOUNCES on. Their sum is FLUENCE exactly: the equilibrium is the
+ * series, term by term (beam-series).
+ */
+export const BOUNCES = 8;
+const FLUENCE_N = Array.from({ length: BOUNCES + 1 }, () => new Float64Array(GW * GH * 3));
+/** The power (luminance, Y) of each term: the light as it sets out after n interactions. */
+const POWER_N = new Float64Array(BOUNCES + 1);
 /** Every photon a mirror sent on, as it left the mirror (for T, below). */
 const MIRROR_OUT: { p: Vec; d: Vec; s: Seg; xyz: [number, number, number] }[] = [];
 const toXYZw = (w: Float64Array): [number, number, number] => {
@@ -103,8 +113,11 @@ const gauss = () => Math.sqrt(-2 * Math.log(1 - rand())) * Math.cos(2 * Math.PI 
     for (let bounce = 0; bounce < 40; bounce++) {
       const h = hit(o, d, skip);
       if (!h) break;
-      track(o, h.p, toXYZw(w));
-      if (bounce === 0) track(o, h.p, toXYZw(w), FLUENCE_E);
+      const xyz = toXYZw(w);
+      track(o, h.p, xyz);
+      track(o, h.p, xyz, FLUENCE_N[Math.min(bounce, BOUNCES)]);
+      POWER_N[Math.min(bounce, BOUNCES)]! += xyz[1];
+      if (bounce === 0) track(o, h.p, xyz, FLUENCE_E);
       if (h.s.kind === 'black') break;
       if (h.s.kind === 'mirror') {
         for (let i = 0; i < NS; i++) w[i]! *= MIRROR_R;
@@ -193,6 +206,61 @@ export function fluenceOf(which: 'L' | 'E' | 'T'): Float64Array {
   if (which === 'L') return FLUENCE;
   if (which === 'E') return FLUENCE_E;
   return (FLUENCE_T ??= traceT());
+}
+
+/** T^n E as fluence, n < BOUNCES; n = BOUNCES is the rest of the series, every term from there on. */
+export function fluenceOfBounce(n: number): Float64Array {
+  return FLUENCE_N[Math.min(n, BOUNCES)]!;
+}
+/**
+ * Sample `count` more lamp paths, exactly as the main trace does but from the
+ * caller's random stream, and add each stretch of flight to `into[n]`, n its
+ * number of interactions so far (n < into.length; later ones dropped). Each
+ * photon carries the lamp's whole spectrum: divide a grid by the number of
+ * photons sampled so far to get the same scale as fluenceOfBounce (term-rooms
+ * ?mc, the terms filling in by Monte Carlo).
+ */
+export function sampleBounces(count: number, rng: () => number, into: Float64Array[]): void {
+  const g = () => Math.sqrt(-2 * Math.log(1 - rng())) * Math.cos(2 * Math.PI * rng());
+  const w = new Float64Array(NS);
+  for (let k = 0; k < count; k++) {
+    let s = g() * SOURCE.waist;
+    while (Math.abs(s) > 0.9) s = g() * SOURCE.waist;
+    let o = add(SOURCE.center, N, s);
+    let d = unit(add(A, N, Math.tan(g() * SOURCE.sigma)));
+    for (let i = 0; i < NS; i++) w[i] = SUN[i]!;
+    let skip: Seg | null = null;
+    for (let bounce = 0; bounce < into.length; bounce++) {
+      const h = hit(o, d, skip);
+      if (!h) break;
+      track(o, h.p, toXYZw(w), into[bounce] as typeof FLUENCE);
+      if (h.s.kind === 'black') break;
+      if (h.s.kind === 'mirror') {
+        for (let i = 0; i < NS; i++) w[i]! *= MIRROR_R;
+        d = reflect(d, h.s.n);
+      } else {
+        if (dot(d, h.s.n) >= 0) break;
+        const alb = h.s.albedo!;
+        const p = alb.reduce((x, y) => x + y, 0) / NS;
+        if (rng() > p) break;
+        for (let i = 0; i < NS; i++) w[i]! *= alb[i]! / p;
+        const st = 2 * rng() - 1;
+        d = unit(add(add(v(0, 0), h.s.n, Math.sqrt(1 - st * st)), perp(h.s.n), st));
+      }
+      o = h.p;
+      skip = h.s;
+    }
+  }
+}
+export const GRID_SIZE = GW * GH * 3;
+/** Add a stretch of flight from a to b, carrying xyz, into a fluence grid (any grid of GRID_SIZE). */
+export function trackInto(a: Vec, b: Vec, xyz: [number, number, number], grid: Float64Array): void {
+  track(a, b, xyz, grid as typeof FLUENCE);
+}
+
+/** The power of T^n E (n = BOUNCES: of the rest of the series), the norm the slides use. */
+export function powerOfBounce(n: number): number {
+  return POWER_N[Math.min(n, BOUNCES)]!;
 }
 
 // --- Any light field, and T of it ------------------------------------------------

@@ -173,6 +173,14 @@ export interface PinholeCamera {
   fov: number;
   /** Distance from the eye to the image plane, in world units. */
   planeDist: number;
+  /**
+   * A thin lens at the eye: aperture radius and focus distance (along the
+   * view axis), world units. Absent, the camera is a pinhole. With it, each
+   * sample starts at its own point of the aperture disk and aims at the point
+   * the pinhole ray would reach on the plane of focus, so that plane is sharp
+   * and everything off it blurs: the finite lens of the deck's slide 36.
+   */
+  lens?: { radius: number; focus: number };
 }
 
 export interface RenderedImage {
@@ -246,12 +254,29 @@ export function renderImage(
           const fy = (py + (sy + 0.5) / k + (sy % 2 ? -jitter : jitter) * 0.5) / height;
           const su = (fx * 2 - 1) * halfW;
           const sv = (1 - fy * 2) * halfH;
-          const d = unit([
+          let d = unit([
             fwd[0] * cam.planeDist + right[0] * su + up[0] * sv,
             fwd[1] * cam.planeDist + right[1] * su + up[1] * sv,
             fwd[2] * cam.planeDist + right[2] * su + up[2] * sv,
           ]);
-          const { rgb: c, hit } = shade(b, cam.eye, d);
+          let o: V3 = cam.eye;
+          if (cam.lens) {
+            // Aperture point i of k²: a golden-angle spiral, even over the disk.
+            const i = sy * k + sx;
+            const rr = cam.lens.radius * Math.sqrt((i + 0.5) / (k * k));
+            const th = i * 2.399963 + (px * 7 + py * 13) * 0.7;
+            const ax = rr * Math.cos(th);
+            const ay = rr * Math.sin(th);
+            o = [
+              cam.eye[0] + right[0] * ax + up[0] * ay,
+              cam.eye[1] + right[1] * ax + up[1] * ay,
+              cam.eye[2] + right[2] * ax + up[2] * ay,
+            ];
+            const t = cam.lens.focus / (d[0] * fwd[0] + d[1] * fwd[1] + d[2] * fwd[2]);
+            const f: V3 = [cam.eye[0] + d[0] * t, cam.eye[1] + d[1] * t, cam.eye[2] + d[2] * t];
+            d = unit([f[0] - o[0], f[1] - o[1], f[2] - o[2]]);
+          }
+          const { rgb: c, hit } = shade(b, o, d);
           if (!hit) {
             if (!first) misses++;
             continue;

@@ -114,6 +114,21 @@ export const INFO: Record<string, DemoInfo> = {
   // in three parts, so the titles are numbered: the folder names sort
   // fibers, forest, unfold, which is not playing order.
   // See notes/light-field-demos.md before changing these.
+  'light-field-density': {
+    title: 'Storing a Light Field: the Real Density',
+    blurb: 'The unfolded net at the demos\' 8 texels per unit, then every cell splits (16, 32, 64) down to the light-field repo\'s actual bake of this room, until the grid is too fine to see. Every level is the real bake averaged to that grid.',
+    section: 'Light Fields in 3D',
+  },
+  'light-field-camera': {
+    title: 'A Thin-Lens Camera Pointed at the Stored Light Field',
+    blurb: 'The stored field unfolded, every texel showing its tile of directions, and a thin-lens camera aimed at it: each pixel averages rays through points of the lens, each ray lighting the direction cell it reads, and the photograph fills in.',
+    section: 'Light Fields in 3D',
+  },
+  'gallery-scene': {
+    title: 'The Gallery, in Plain three.js',
+    blurb: "The light-field repo's gallery scene (corridor, colour bays, pedestals, 29 balls, five ceiling lights) drawn with three.js's ordinary materials and lights: the objects, with none of their light computed. Drag to orbit.",
+    section: 'Light Fields in 3D',
+  },
   'light-field-unfold': {
     title: 'Storing a Light Field — 1. The Room Unfolds',
     blurb:
@@ -215,6 +230,56 @@ export const INFO: Record<string, DemoInfo> = {
   'beam-bounce': {
     title: 'The Lamp, and One Bounce',
     blurb: 'The beam room twice, as rays: E, the lamp\'s light to the first thing it meets; and T(E), the room acting once: the mirror sends the beam on, the walls send light out in every direction in their colour.',
+    section: 'Modeling Light',
+  },
+  'geometric-series': {
+    title: '1/(1 - x) and its Taylor Polynomials',
+    blurb: 'The partial sums 1 + x + ... + x^N appear one at a time and close in on 1/(1 - x) inside |x| < 1.',
+    section: 'Solving for the Light Field',
+  },
+  'path-terms': {
+    title: 'A Sum over Paths',
+    blurb: 'C E + C T E + C T² E + C T³ E + ⋯ with a small beam room under each term: one real light path of that length, from the camera through n surfaces to the lamp.',
+    section: 'Solving for the Light Field',
+  },
+  'camera-terms': {
+    title: 'Path Tracing from a Camera, Term by Term',
+    blurb: 'Three beam rooms, one per path length from the film to the lamp (2, 3, 4): the camera, a few of its sampled paths of that length, and that term\'s image on the film as a strip. ?mc: sampled live.',
+    section: 'Solving for the Light Field',
+  },
+  'term-rooms': {
+    title: 'The Rooms We Are Adding Up',
+    blurb: 'E + TE + T²E + ⋯ as three glowing beam rooms in a row, each lit only by light that has interacted exactly n times. ?mc: each fills in live by sampling paths.',
+    section: 'Solving for the Light Field',
+  },
+  'title-caustic': {
+    title: 'A Caustic, for the Title',
+    blurb: 'Rays from one point on a circular mirror, reflecting inside it, added a few at a time until the cardioid caustic builds up.',
+    section: 'Modeling Light',
+  },
+  'state-space-beam': {
+    title: 'The Space of States, in the Beam Room',
+    blurb: 'state-space for the beam room: the circle of directions at every point of the boundary stands up and sweeps out a torus over the walls and a cylinder over each two-sided mirror (outgoing light: its front and back hemispheres make one circle).',
+    section: 'Modeling Light',
+  },
+  'state-space-beam-stored': {
+    title: 'Storing the Beam Room\'s Light Field',
+    blurb: 'state-space-beam chopped into cells (patch × direction bin) and unrolled into flat grids: four for the walls, which keep only their outgoing half, and two for the mirrors, which keep both.',
+    section: 'Modeling Light',
+  },
+  'sample-interpolate-2d': {
+    title: 'Store Samples, Interpolate Between Them (2D)',
+    blurb: 'A complicated function of two variables as a surface, a uniform grid under it, its values kept at the grid points, the surface gone, and the bilinear interpolant built cell by cell; then the function back as a faint mesh to compare. ?n= sets the grid.',
+    section: 'Modeling Light',
+  },
+  'sample-interpolate': {
+    title: 'Store Samples, Interpolate Between Them',
+    blurb: 'A function, a uniform grid under it, its values kept at the grid points, the function gone, and the straight-line interpolant drawn between the kept values; then the function back, faint, to compare. ?n= sets the grid.',
+    section: 'Modeling Light',
+  },
+  'beam-series': {
+    title: 'The Equilibrium as a Series',
+    blurb: 'The beam room as glow: one term T^n E at a time, the lamp\'s light after exactly n interactions, beside the running sum, which climbs to the equilibrium (Id - T)^-1 E.',
     section: 'Modeling Light',
   },
   'equilibrium-room': {
