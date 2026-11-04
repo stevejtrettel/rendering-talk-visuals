@@ -297,6 +297,11 @@ export const INFO: Record<string, DemoInfo> = {
     blurb: 'Guesses at the light in the beam room (darkness, the lamp alone, glowing walls): each drawn as L, then T(L), then E + T(L), and none comes back to itself. The equilibrium is the one that would. ?panels=three: L = E + T(L) for the computed equilibrium; ?panels=question: E and L.',
     section: 'Modeling Light',
   },
+  'thin-lens-camera': {
+    title: 'A Thin-Lens Camera',
+    blurb: 'The pinhole camera with a lens: each pixel averages the light field over a fan of rays, one through every point of the lens, all meeting at the pixel\'s point on the focus plane. Sharp where the focus plane meets a surface, blurred elsewhere; aperture 0 is the pinhole. &rgb draws each ray in the colour of its light, without the spectrum graph.',
+    section: 'Modeling Light',
+  },
   'pinhole-camera': {
     title: 'A Pinhole Camera',
     blurb: 'A box with a pinhole in the beam room: each pixel reads the one spectrum on the ray through the pinhole onto it, and turns it into a colour. A 2D room makes a 1D image. Drag the camera after the scan and the image is read again at once.',

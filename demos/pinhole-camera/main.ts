@@ -79,13 +79,18 @@ function pixel(k: number): { at: Vec; w: Vec } {
 }
 
 // --- The graph and the image ------------------------------------------------------
+/** `&rgb` (Steve): no spectrum graph; each ray drawn in the colour of the light it brings back. */
+const RGB_MODE = new URLSearchParams(location.search).has('rgb');
+const graph = new THREE.Group();
+graph.visible = !RGB_MODE;
+stage.add(graph);
 const G = { x0: 2.0, x1: 5.05, y0: 0.45, y1: 2.35 };
 const gx = (nm: number) => G.x0 + ((nm - WL0) / (WL1 - WL0)) * (G.x1 - G.x0);
 const gy = (h: number) => G.y0 + Math.min(h, 1) * (G.y1 - G.y0);
-stage.add(polyline([[G.x0, G.y0, 0], [G.x1, G.y0, 0]], { color: C.slateDeep, width: 2 }));
+graph.add(polyline([[G.x0, G.y0, 0], [G.x1, G.y0, 0]], { color: C.slateDeep, width: 2 }));
 for (const nm of [400, 500, 600, 700]) {
-  stage.add(polyline([[gx(nm), G.y0 - 0.08, 0], [gx(nm), G.y0, 0]], { color: C.slateDeep, width: 2 }));
-  stage.add(label(String(nm), { size: 0.15, color: C.slate, anchorX: 'center', anchorY: 'top', position: [gx(nm), G.y0 - 0.28, 0] }));
+  graph.add(polyline([[gx(nm), G.y0 - 0.08, 0], [gx(nm), G.y0, 0]], { color: C.slateDeep, width: 2 }));
+  graph.add(label(String(nm), { size: 0.15, color: C.slate, anchorX: 'center', anchorY: 'top', position: [gx(nm), G.y0 - 0.28, 0] }));
 }
 for (let i = 0; i < 120; i++) {
   const nm = WL0 + ((WL1 - WL0) * (i + 0.5)) / 120;
@@ -95,9 +100,9 @@ for (let i = 0; i < 120; i++) {
     flat(nmColour(nm), { transparent: true, opacity: Math.min(1, (xyz[0]! + xyz[1]! + xyz[2]!) * 1.6) }),
   );
   strip.position.set(gx(nm), G.y0 - 0.14, 0);
-  stage.add(strip);
+  graph.add(strip);
 }
-stage.add(label('Spectrum', { size: 0.18, color: C.ash, anchorX: 'center', anchorY: 'top', position: [(G.x0 + G.x1) / 2, G.y0 - 0.52, 0] }));
+graph.add(label('Spectrum', { size: 0.18, color: C.ash, anchorX: 'center', anchorY: 'top', position: [(G.x0 + G.x1) / 2, G.y0 - 0.52, 0] }));
 const curve = polyline(Array.from({ length: NS }, () => [0, 0, 0] as [number, number, number]), { color: C.bone, width: 4 });
 const fillGeom = new THREE.BufferGeometry();
 fillGeom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(NS * 6), 3));
@@ -105,9 +110,9 @@ fillGeom.setIndex(Array.from({ length: NS - 1 }, (_, i) => [2 * i, 2 * i + 1, 2 
 const fillMesh = new THREE.Mesh(fillGeom, flat(C.bone, { transparent: true, opacity: 0.15, side: THREE.DoubleSide, depthWrite: false }));
 fillMesh.position.z = -0.01;
 const offScale = label('off the top', { size: 0.15, color: C.ash, anchorX: 'left', anchorY: 'bottom', position: [G.x0, G.y1 + 0.08, 0] });
-stage.add(curve, fillMesh, offScale);
+graph.add(curve, fillMesh, offScale);
 
-const IMG = { x0: 2.0, x1: 5.05, y: -1.25 };
+const IMG = RGB_MODE ? { x0: 2.05, x1: 5.15, y: 0 } : { x0: 2.0, x1: 5.05, y: -1.25 };
 const CELL = (IMG.x1 - IMG.x0) / NPIX;
 const image = Array.from({ length: NPIX }, (_, k) => {
   const m = new THREE.Mesh(new THREE.PlaneGeometry(CELL * 0.92, CELL * 0.92), flat(0x000000));
@@ -155,7 +160,10 @@ function drawCamera(): void {
 // --- Update ---------------------------------------------------------------------------
 let manual = false; // once the camera is moved, or a pixel clicked, the scan is over
 let chosen = NPIX - 1;
+/** `&rgb`: a ray drawn in the colour of the light it brings back. */
+const tint = (line: { material: unknown }, hex: number) => (line.material as { color: THREE.Color }).color.setHex(hex);
 function setGraph(k: number | null): void {
+  if (RGB_MODE) return;
   curve.visible = fillMesh.visible = k !== null;
   offScale.visible = false;
   if (k === null) return;
@@ -199,8 +207,10 @@ function show(t: number): void {
     (image[j]!.material as THREE.MeshBasicMaterial).color.setHex(c);
     rays[j]!.visible = (manual || j < k) && j !== active;
     if (rays[j]!.visible) setPolyline(rays[j]!, rayPoints(j, 1));
+    if (RGB_MODE) tint(rays[j]!, colours[j]!);
   }
   current.visible = active !== null;
+  if (RGB_MODE && active !== null) tint(current, colours[active]!);
   if (active !== null) setPolyline(current, rayPoints(active, manual || active < k ? 1 : Math.min(1, f / 0.45)));
   setGraph(active !== null && (manual || active < k || f > 0.45) ? active : null);
   setMark(active);
