@@ -30,8 +30,9 @@
  * On the left, the object and a point p on its surface, a circle about p,
  * and one pair of directions: the incoming ray (ochre) and the outgoing ray
  * (blue). That pair is one point of the square, the marker; drag it (or the
- * `in` / `out` sliders) and the rays turn with it, the outgoing ray as
- * bright as f is there (Steve, 2026-11-03: "move it around and see the rays
+ * `in` / `out` sliders) and the rays turn with it, the outgoing arrow as
+ * long as the square is bright there (a dashed line keeps its direction
+ * where f is zero) (Steve, 2026-11-03: "move it around and see the rays
  * where the response is high"). On a mirror's or clear glass's line the
  * marker snaps on, since a line is hard to land on by hand.
  *
@@ -230,9 +231,12 @@ function arrowHead(color: number): THREE.Mesh {
 }
 const inRay = polyline([[0, 0, 0], [0, 0, 0]], { color: C.ochre, width: 4 });
 const inHead = arrowHead(C.ochre);
-const outRay = polyline([[0, 0, 0], [0, 0, 0]], { color: C.blue, width: 4 });
-const outHead = arrowHead(C.blue);
-stage.add(inRay, inHead, outRay, outHead);
+const OUT = 0x8fb5d6; // the outgoing ray, a lighter blue than the axis label so it reads on dark glass
+const outRay = polyline([[0, 0, 0], [0, 0, 0]], { color: OUT, width: 4 });
+const outHead = arrowHead(OUT);
+/** The outgoing direction itself, faint and full length, so it shows where the response is zero. */
+const outGuide = polyline([[0, 0, 0], [0, 0, 0]], { color: C.slate, width: 1.5, dashed: true, dashSize: 0.07, gapSize: 0.06 });
+stage.add(inRay, inHead, outRay, outHead, outGuide);
 const dirOf = (a: number) => new THREE.Vector2(Math.sin(rad(a)), Math.cos(rad(a)));
 /** From `from` to `to`, the head at `to`. */
 function ray(line: ReturnType<typeof polyline>, head: THREE.Mesh, from: THREE.Vector2, to: THREE.Vector2): void {
@@ -246,20 +250,25 @@ function ray(line: ReturnType<typeof polyline>, head: THREE.Mesh, from: THREE.Ve
 // --- The marker on the square ------------------------------------------------------
 const marker = new THREE.Mesh(new THREE.RingGeometry(0.07, 0.11, 32), flat(C.rust));
 stage.add(marker);
-const BRIGHT = new THREE.Color(C.blue).lerp(new THREE.Color(0xffffff), 0.35);
-const DIM = new THREE.Color(C.slateDeep);
 const wrap = (a: number) => ((((a - A0) % 360) + 360) % 360) + A0;
 function update(): void {
   const u = wrap(params.in);
   const v = wrap(params.out);
   const p = new THREE.Vector2(P.x, P.y);
   ray(inRay, inHead, p.clone().add(dirOf(u).multiplyScalar(RING)), p.clone().add(dirOf(u).multiplyScalar(0.09)));
-  ray(outRay, outHead, p.clone().add(dirOf(v).multiplyScalar(0.09)), p.clone().add(dirOf(v).multiplyScalar(RING)));
   const i = Math.max(0, Math.min(N - 1, Math.round(texelOf(u))));
   const j = Math.max(0, Math.min(N - 1, Math.round(texelOf(v))));
-  const c = DIM.clone().lerp(BRIGHT, value[j * N + i]!);
-  (outRay.material as unknown as { color: THREE.Color }).color.copy(c);
-  (outHead.material as THREE.MeshBasicMaterial).color.copy(c);
+  // The response: the outgoing arrow as long as the square is bright at the marker (the whole circle's radius at full).
+  const f = value[j * N + i]!;
+  const len = f * RING;
+  const tip = p.clone().add(dirOf(v).multiplyScalar(RING));
+  const from = p.clone().add(dirOf(v).multiplyScalar(0.09));
+  setPolyline(outGuide, [[from.x, from.y, 0.1], [tip.x, tip.y, 0.1]]);
+  outRay.visible = outHead.visible = len > 0.04;
+  if (outRay.visible) {
+    ray(outRay, outHead, from, p.clone().add(dirOf(v).multiplyScalar(0.09 + len)));
+    outHead.scale.setScalar(Math.min(1, len / 0.4));
+  }
   marker.position.set(toX(u), toY(v), 0.3);
 }
 function setMaterial(): void {
