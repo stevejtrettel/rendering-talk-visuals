@@ -222,7 +222,7 @@ stage.add(polyline(Array.from({ length: 121 }, (_, k) => [P.x + RING * Math.cos(
 const pDot = new THREE.Mesh(new THREE.CircleGeometry(0.06, 24), flat(C.bone));
 pDot.position.set(P.x, P.y, 0.3);
 stage.add(pDot);
-stage.add(label('p', { size: 0.22, color: C.bone, anchorX: 'left', anchorY: 'top', position: [P.x + 0.1, P.y - 0.08, 0.3] }));
+stage.add(label('p', { size: 0.22, color: C.bone, anchorX: 'right', anchorY: 'top', position: [P.x - 0.12, P.y - 0.06, 0.3] }));
 function arrowHead(color: number): THREE.Mesh {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, -0.2, 0.08, 0, -0.2, -0.08, 0], 3));
