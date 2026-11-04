@@ -39,7 +39,7 @@ const ui = createUI(stage);
 
 // --- Figure spec -----------------------------------------------------------
 const SQ = { cx: -1.55, cy: -0.25, half: 1.85 };
-const FAN = { x: 3.35, r: 1.15, yTop: 0.55, yBottom: -2.15 };
+const FAN = { x: 3.35, r: 1.05, yTop: 0.1, yBottom: -2.35 };
 const RHO = 0.8;
 const GLOSS = 24;
 const N = 256; // the heatmap's texels a side
