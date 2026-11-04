@@ -29,19 +29,19 @@ stage.duration = 16;
 const ui = createUI(stage);
 
 // --- Figure spec -----------------------------------------------------------
-const P = new THREE.Vector2(-1.5, -1.55); // the point on the surface
-const SURFACE = [-4.0, 0.9]; // the surface's drawn extent in x
-const L = 2.3; // n and l, drawn at this length (both unit vectors)
-const SUN_AT = 3.75; // the sun's distance from the point
+const P = new THREE.Vector2(-2.0, -1.45); // the point on the surface
+const SURFACE = [-4.6, 0.6]; // the surface's drawn extent in x
+const L = 1.95; // n and l, drawn at this length (both unit vectors)
+const SUN_AT = 2.75; // the sun's distance from the point
 const ARC = 0.62; // the angle's arc
 const SWEEP = 78; // the sweep's reach either side of the normal, degrees
-const READ = { x: 2.15, y: 0.55 };
-const SWATCH = { x: 3.35, y: -1.1, size: 1.1 };
+const READ = { x: 2.45, y: 0.55 };
+const SWATCH = { x: 3.65, y: -1.1, size: 1.1 };
 
 const params = { sun: 35, sweep: true };
 ui.params
   .add(params, 'sun', -100, 100, 1)
-  .name('sun (degrees from normal)')
+  .name('sun')
   .onChange(() => (params.sweep = false));
 ui.params.add(params, 'sweep');
 
