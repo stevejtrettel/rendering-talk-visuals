@@ -41,7 +41,7 @@ stage.duration = 1;
 const ui = createUI(stage);
 
 // --- Figure spec -----------------------------------------------------------
-const SQ = { cx: 0.3, cy: 0.2, half: 2.3 };
+const SQ = { cx: 0.3, cy: -0.15, half: 2.0 }; // clear of the deck's material buttons
 const MATERIALS = ['matte', 'glossy', 'mirror', 'glass', 'foggy glass', 'paper'] as const;
 type Material = (typeof MATERIALS)[number];
 const RHO = 0.8;
@@ -51,7 +51,8 @@ const GLOSS_SIGMA = 9; // degrees
 const FOG_SIGMA = 12;
 const N = 720; // texels a side, half a degree each
 const LINE_R = 1.6; // a spike's line, half-width in texels
-const tone = (x: number) => 1 - Math.exp(-x / 1.6);
+/** One scale for every material: matte a mid grey, the bands bright but not white. */
+const tone = (x: number) => x / (x + 0.6);
 const startMaterial = new URLSearchParams(location.search).get('material')?.replace(/[+_-]/g, ' ');
 const params = { material: (MATERIALS as readonly string[]).includes(startMaterial ?? '') ? (startMaterial as Material) : 'matte' };
 
