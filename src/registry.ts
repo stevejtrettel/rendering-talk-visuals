@@ -317,6 +317,11 @@ export const INFO: Record<string, DemoInfo> = {
     blurb: 'The beam room on the left; hover over any piece of its boundary to see the material stored there, f_p on circle x circle unwrapped to a square, each texel coloured by its RGB multiplier: the red and green walls and the white floor and ceiling a flat square in their colour (above only), the mirrors a line above and below, the lamp housing black.',
     section: 'Modeling Interactions',
   },
+  'apply-t': {
+    title: 'Applying T to a Light Field',
+    blurb: 'The beam room twice: L, the same white light along every ray, and TL, one interaction later: each wall sends out its albedo, the mirrors 0.95 white, the housing nothing. Each room filled with the average light there; the probe (follow the pointer) shows the light arriving from every direction at one place.',
+    section: 'Modeling Interactions',
+  },
   'thin-lens-camera': {
     title: 'A Thin-Lens Camera',
     blurb: 'The pinhole camera with a lens: each pixel averages the light field over a fan of rays, one through every point of the lens, all meeting at the pixel\'s point on the focus plane. Sharp where the focus plane meets a surface, blurred elsewhere; aperture 0 is the pinhole. &rgb draws each ray in the colour of its light, without the spectrum graph.',
