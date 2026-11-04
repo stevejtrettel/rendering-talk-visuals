@@ -222,6 +222,11 @@ export const INFO: Record<string, DemoInfo> = {
     blurb: "The beam room with coloured walls, its equilibrium light computed by light tracing (spectral, in the ray limit). Drag a probe ray anywhere and the graph shows the spectrum travelling along it, read back from the surface it left.",
     section: 'Modeling Light',
   },
+  'cos-theta': {
+    title: 'cos θ = n · l',
+    blurb: 'The brightness pass\'s number on its own: a surface edge-on, its normal n, the sun and its direction l; the projection of l onto n is cos θ, read out with the grey the pass paints, max(0, cos θ). The sun sweeps; drag it, or the sun slider.',
+    section: 'Modeling Light',
+  },
   'brdf-fan': {
     title: 'What T Is Made Of',
     blurb: 'One ray of white light meets the red wall, the green wall and a mirror of the beam room; what leaves is drawn as rays, the surface\'s BRDF: the walls the same in every direction in their colour (white times the Material Response below), the mirror one way.',
