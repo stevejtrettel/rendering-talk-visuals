@@ -27,21 +27,34 @@
  *   foggy glass  the same, every line blurred into a band
  *   paper        thin and translucent: dim everywhere, all four quadrants
  *
+ * On the left, the object and a point p on its surface, a circle about p,
+ * and one pair of directions: the incoming ray (ochre) and the outgoing ray
+ * (blue). That pair is one point of the square, the marker; drag it (or the
+ * `in` / `out` sliders) and the rays turn with it, the outgoing ray as
+ * bright as f is there (Steve, 2026-11-03: "move it around and see the rays
+ * where the response is high"). On a mirror's or clear glass's line the
+ * marker snaps on, since a line is hard to land on by hand.
+ *
  * `material` switches (and `&material=` in the URL).
  */
 
 import * as THREE from 'three';
-import { createStage, createUI, C } from '@';
-import { polyline } from '@/lines';
+import { createStage, createUI, C, flat } from '@';
+import { polyline, setPolyline } from '@/lines';
 import { label } from '@/text';
 
 const ORTHO_H = 3;
+const HALF_W = (ORTHO_H * 16) / 9;
 const stage = createStage({ camera: 'ortho', position: [0, 0, 10], target: [0, 0, 0], orthoHeight: ORTHO_H, lights: false, controls: false });
 stage.duration = 1;
 const ui = createUI(stage);
 
 // --- Figure spec -----------------------------------------------------------
-const SQ = { cx: 0.3, cy: -0.15, half: 2.0 }; // clear of the deck's material buttons
+const SQ = { cx: 2.1, cy: -0.1, half: 1.8 }; // clear of the deck's buttons
+const P = { x: -3.0, y: 0.15 }; // the point on the object's surface
+const RING = 1.3; // the circle about it
+const OBJ = { x0: -5.0, x1: -1.0, y0: -2.75 }; // the object, its top at P.y
+const SNAP = 4; // degrees
 const MATERIALS = ['matte', 'glossy', 'mirror', 'glass', 'foggy glass', 'paper'] as const;
 type Material = (typeof MATERIALS)[number];
 const RHO = 0.8;
@@ -54,7 +67,7 @@ const LINE_R = 1.6; // a spike's line, half-width in texels
 /** One scale for every material: matte a mid grey, the bands bright but not white. */
 const tone = (x: number) => x / (x + 0.6);
 const startMaterial = new URLSearchParams(location.search).get('material')?.replace(/[+_-]/g, ' ');
-const params = { material: (MATERIALS as readonly string[]).includes(startMaterial ?? '') ? (startMaterial as Material) : 'matte' };
+const params = { material: (MATERIALS as readonly string[]).includes(startMaterial ?? '') ? (startMaterial as Material) : 'matte', in: -40, out: 40 };
 
 // --- Directions --------------------------------------------------------------
 const rad = (d: number) => (d * Math.PI) / 180;
@@ -200,6 +213,108 @@ const outName = label('outgoing direction', { size: 0.2, color: C.blue, anchorX:
 outName.rotation.z = Math.PI / 2;
 stage.add(outName);
 
-fill(params.material);
-ui.params.add(params, 'material', [...MATERIALS]).onChange(() => fill(params.material));
+// --- The object, the circle at p, the two rays ------------------------------------
+const object = new THREE.Mesh(new THREE.PlaneGeometry(OBJ.x1 - OBJ.x0, P.y - OBJ.y0), flat(C.moss, { transparent: true }));
+object.position.set((OBJ.x0 + OBJ.x1) / 2, (P.y + OBJ.y0) / 2, -0.2);
+stage.add(object);
+stage.add(polyline([[OBJ.x0, P.y, 0], [OBJ.x1, P.y, 0]], { color: C.bone, width: 2.5 }));
+stage.add(polyline(Array.from({ length: 121 }, (_, k) => [P.x + RING * Math.cos((2 * Math.PI * k) / 120), P.y + RING * Math.sin((2 * Math.PI * k) / 120), 0.05] as [number, number, number]), { color: C.slate, width: 1.5, dashed: true, dashSize: 0.06, gapSize: 0.05 }));
+const pDot = new THREE.Mesh(new THREE.CircleGeometry(0.06, 24), flat(C.bone));
+pDot.position.set(P.x, P.y, 0.3);
+stage.add(pDot);
+stage.add(label('p', { size: 0.22, color: C.bone, anchorX: 'left', anchorY: 'top', position: [P.x + 0.1, P.y - 0.08, 0.3] }));
+function arrowHead(color: number): THREE.Mesh {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, -0.2, 0.08, 0, -0.2, -0.08, 0], 3));
+  return new THREE.Mesh(g, flat(color));
+}
+const inRay = polyline([[0, 0, 0], [0, 0, 0]], { color: C.ochre, width: 4 });
+const inHead = arrowHead(C.ochre);
+const outRay = polyline([[0, 0, 0], [0, 0, 0]], { color: C.blue, width: 4 });
+const outHead = arrowHead(C.blue);
+stage.add(inRay, inHead, outRay, outHead);
+const dirOf = (a: number) => new THREE.Vector2(Math.sin(rad(a)), Math.cos(rad(a)));
+/** From `from` to `to`, the head at `to`. */
+function ray(line: ReturnType<typeof polyline>, head: THREE.Mesh, from: THREE.Vector2, to: THREE.Vector2): void {
+  const d = to.clone().sub(from);
+  const back = to.clone().sub(d.clone().setLength(0.12));
+  setPolyline(line, [[from.x, from.y, 0.2], [back.x, back.y, 0.2]]);
+  head.position.set(to.x, to.y, 0.22);
+  head.rotation.z = Math.atan2(d.y, d.x);
+}
+
+// --- The marker on the square ------------------------------------------------------
+const marker = new THREE.Mesh(new THREE.RingGeometry(0.07, 0.11, 32), flat(C.rust));
+stage.add(marker);
+const BRIGHT = new THREE.Color(C.blue).lerp(new THREE.Color(0xffffff), 0.35);
+const DIM = new THREE.Color(C.slateDeep);
+const wrap = (a: number) => ((((a - A0) % 360) + 360) % 360) + A0;
+function update(): void {
+  const u = wrap(params.in);
+  const v = wrap(params.out);
+  const p = new THREE.Vector2(P.x, P.y);
+  ray(inRay, inHead, p.clone().add(dirOf(u).multiplyScalar(RING)), p.clone().add(dirOf(u).multiplyScalar(0.09)));
+  ray(outRay, outHead, p.clone().add(dirOf(v).multiplyScalar(0.09)), p.clone().add(dirOf(v).multiplyScalar(RING)));
+  const i = Math.max(0, Math.min(N - 1, Math.round(texelOf(u))));
+  const j = Math.max(0, Math.min(N - 1, Math.round(texelOf(v))));
+  const c = DIM.clone().lerp(BRIGHT, value[j * N + i]!);
+  (outRay.material as unknown as { color: THREE.Color }).color.copy(c);
+  (outHead.material as THREE.MeshBasicMaterial).color.copy(c);
+  marker.position.set(toX(u), toY(v), 0.3);
+}
+function setMaterial(): void {
+  fill(params.material);
+  const glassy = params.material === 'glass' || params.material === 'foggy glass';
+  (object.material as THREE.MeshBasicMaterial).color.setHex(glassy ? C.blue : params.material === 'paper' ? C.bone : C.moss);
+  (object.material as THREE.MeshBasicMaterial).opacity = glassy ? 0.3 : params.material === 'paper' ? 0.18 : 0.55;
+  update();
+}
+
+// --- Drag on the square --------------------------------------------------------------
+const canvas = stage.renderer.domElement;
+const toWorld = (e: PointerEvent) => {
+  const r = canvas.getBoundingClientRect();
+  return new THREE.Vector2((((e.clientX - r.left) / r.width) * 2 - 1) * HALF_W, -(((e.clientY - r.top) / r.height) * 2 - 1) * ORTHO_H);
+};
+const onSquare = (q: THREE.Vector2) => Math.abs(q.x - SQ.cx) < SQ.half && Math.abs(q.y - SQ.cy) < SQ.half;
+const angleOfX = (x: number) => A0 + ((x - L) / (R - L)) * 360;
+const angleOfY = (y: number) => A0 + ((y - B) / (T - B)) * 360;
+/** On a spike material, a pair near one of its lines snaps onto it. */
+function snapped(u: number, v: number): number {
+  const targets = params.material === 'mirror' ? (above(u) ? [-u] : []) : params.material === 'glass' ? glassTargets(u).map(([t]) => t) : [];
+  for (const t of targets) {
+    const d = ((v - t + 540) % 360) - 180;
+    if (Math.abs(d) < SNAP) return wrap(t);
+  }
+  return v;
+}
+let dragging = false;
+function moveTo(q: THREE.Vector2): void {
+  const u = Math.round(angleOfX(Math.max(L, Math.min(R - 1e-6, q.x))));
+  const v = angleOfY(Math.max(B, Math.min(T - 1e-6, q.y)));
+  params.in = u;
+  params.out = Math.round(snapped(u, v) * 10) / 10;
+  ui.params.controllers.forEach((c) => c.updateDisplay());
+  update();
+}
+canvas.addEventListener('pointerdown', (e) => {
+  const q = toWorld(e);
+  if (!onSquare(q)) return;
+  dragging = true;
+  canvas.setPointerCapture(e.pointerId);
+  moveTo(q);
+});
+canvas.addEventListener('pointermove', (e) => {
+  const q = toWorld(e);
+  canvas.style.cursor = onSquare(q) ? 'crosshair' : '';
+  if (dragging) moveTo(q);
+});
+const release = () => (dragging = false);
+canvas.addEventListener('pointerup', release);
+canvas.addEventListener('pointercancel', release);
+
+setMaterial();
+ui.params.add(params, 'material', [...MATERIALS]).onChange(setMaterial);
+ui.params.add(params, 'in', A0, A0 + 359, 1).onChange(update);
+ui.params.add(params, 'out', A0, A0 + 359, 1).onChange(update);
 stage.start();
