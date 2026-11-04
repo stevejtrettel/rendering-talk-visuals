@@ -307,6 +307,11 @@ export const INFO: Record<string, DemoInfo> = {
     blurb: 'f(u -> v) on a square, incoming angle across, outgoing up: matte flat, glossy a band on the mirror diagonal, mirror a line. Fixing the incoming direction is a vertical slice, where its light goes; fixing the outgoing one a horizontal slice, where its light comes from.',
     section: 'Modeling Interactions',
   },
+  'material-square': {
+    title: 'The Data of T at a Point',
+    blurb: 'The material f(u, v) in 2D, on circle x circle unwrapped to a square: incoming direction across, outgoing up, each split into above and below the surface. Opaque materials (matte, glossy, mirror) live in one quadrant and are black in the other three; glass and foggy glass light all four, with Snell\'s bent lines and total internal reflection from inside; paper is dim everywhere.',
+    section: 'Modeling Interactions',
+  },
   'thin-lens-camera': {
     title: 'A Thin-Lens Camera',
     blurb: 'The pinhole camera with a lens: each pixel averages the light field over a fan of rays, one through every point of the lens, all meeting at the pixel\'s point on the focus plane. Sharp where the focus plane meets a surface, blurred elsewhere; aperture 0 is the pinhole. &rgb draws each ray in the colour of its light, without the spectrum graph.',
