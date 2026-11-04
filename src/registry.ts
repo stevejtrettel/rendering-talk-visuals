@@ -297,6 +297,16 @@ export const INFO: Record<string, DemoInfo> = {
     blurb: 'Guesses at the light in the beam room (darkness, the lamp alone, glowing walls): each drawn as L, then T(L), then E + T(L), and none comes back to itself. The equilibrium is the one that would. ?panels=three: L = E + T(L) for the computed equilibrium; ?panels=question: E and L.',
     section: 'Modeling Light',
   },
+  'local-response': {
+    title: 'T at One Point',
+    blurb: 'A point on the floor of the beam room: the real light arriving there from every direction, and what a material (matte, glossy, mirror) sends out in every direction. ?mode=in: one direction in, and where it goes; ?mode=out: one direction out, and where it comes from.',
+    section: 'Modeling Interactions',
+  },
+  'brdf-square': {
+    title: 'The Material Is a Function of Two Directions',
+    blurb: 'f(u -> v) on a square, incoming angle across, outgoing up: matte flat, glossy a band on the mirror diagonal, mirror a line. Fixing the incoming direction is a vertical slice, where its light goes; fixing the outgoing one a horizontal slice, where its light comes from.',
+    section: 'Modeling Interactions',
+  },
   'thin-lens-camera': {
     title: 'A Thin-Lens Camera',
     blurb: 'The pinhole camera with a lens: each pixel averages the light field over a fan of rays, one through every point of the lens, all meeting at the pixel\'s point on the focus plane. Sharp where the focus plane meets a surface, blurred elsewhere; aperture 0 is the pinhole. &rgb draws each ray in the colour of its light, without the spectrum graph.',
