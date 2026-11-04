@@ -36,7 +36,7 @@ const L = 1.95; // n, l, R and v, drawn at this length (all unit vectors)
 const AWAY = 2.75; // the sun's and the eye's distance from the point
 const ARC = 0.85; // the angle between R and v
 const SHININESS = 30;
-const SWEEP = { mid: 35, reach: 50 }; // the eye's sweep, degrees from the normal
+const SWEEP = { mid: 30, reach: 45 }; // the eye's sweep, degrees from the normal
 const READ = { x: 2.25, y: 1.15 };
 const SWATCH = { x: 3.65, y: -1.25, size: 1.1 };
 
