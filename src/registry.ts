@@ -222,6 +222,11 @@ export const INFO: Record<string, DemoInfo> = {
     blurb: "The beam room with coloured walls, its equilibrium light computed by light tracing (spectral, in the ray limit). Drag a probe ray anywhere and the graph shows the spectrum travelling along it, read back from the surface it left.",
     section: 'Modeling Light',
   },
+  'phong-highlight': {
+    title: 'The Phong Highlight',
+    blurb: 'The Phong pass\'s number on its own: a surface edge-on, its normal n, the sun\'s direction l mirrored to R, and an eye along v; R · v = cos α and (R · v)^30, read out with the grey the pass paints. The eye sweeps through R; drag it or the sun, or the eye and sun sliders.',
+    section: 'Modeling Light',
+  },
   'cos-theta': {
     title: 'cos θ = n · l',
     blurb: 'The brightness pass\'s number on its own: a surface edge-on, its normal n, the sun and its direction l; the projection of l onto n is cos θ, read out with the grey the pass paints, max(0, cos θ). The sun sweeps; drag it, or the sun slider.',
