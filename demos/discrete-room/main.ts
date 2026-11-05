@@ -44,7 +44,8 @@
  *           L, then we compute C(L), our photograph"): L across the top as a
  *           row, its 4,248 entries; under it, lined up column for column, C,
  *           one row per pixel and colour (CAM_PIX pixels x 3), each row a
- *           single nonzero, the entry of L its ray reads (a pinhole camera:
+ *           single nonzero, the entry of L its ray reads (16 pixels, as in
+ *           pinhole-camera; a pinhole camera:
  *           the pixel's ray leaves one piece in one sector); = the column of
  *           pixel values; and those as the photograph, a strip. The camera is
  *           the Part II pinhole (pinhole-camera: at (-3.5, -1.3), aimed 22
@@ -643,7 +644,7 @@ if (SHOW === 'inverse') {
 if (SHOW === 'camera') {
   stage.duration = 1;
   const NN = 3 * N;
-  const CAM_PIX = 64;
+  const CAM_PIX = 16; // pinhole-camera's
   const ROWS = 3 * CAM_PIX;
   const TINT: RGB[] = [[0.85, 0.36, 0.28], [0.45, 0.72, 0.38], [0.42, 0.62, 0.86]];
   const hexOfTint = (c: number, b = 1) => new THREE.Color().setRGB(...(TINT[c]!.map((t) => Math.min(1, t * b)) as RGB), THREE.LinearSRGBColorSpace).getHex();
@@ -668,8 +669,8 @@ if (SHOW === 'camera') {
   const DEPTH = 0.8;
   const WIDTH = 1.6;
   const rayOf = (j: number) => {
-    const off = -WIDTH / 2 + (WIDTH * (j + 0.5)) / CAM_PIX; // across the sensor; the image is flipped through the pinhole
-    const a = AIM + Math.atan2(off, DEPTH);
+    const off = -WIDTH / 2 + (WIDTH * (j + 0.5)) / CAM_PIX; // across the sensor, as pinhole-camera numbers them: pixel 0 looks left of the aim
+    const a = AIM - Math.atan2(off, DEPTH);
     return v(Math.cos(a), Math.sin(a));
   };
   /** Each pixel's one entry of L (per colour block), or -1 if its ray meets nothing that sends light toward it. */
@@ -745,7 +746,7 @@ if (SHOW === 'camera') {
     for (let c = 0; c < 3; c++)
       for (let j = 0; j < CAM_PIX; j++) {
         if (pick[j]! < 0) continue;
-        const d = new THREE.Mesh(new THREE.CircleGeometry(0.022, 10), flat(hexOfTint(c, 1.1)));
+        const d = new THREE.Mesh(new THREE.CircleGeometry(0.04, 14), flat(hexOfTint(c, 1.1)));
         d.position.set(xOfCol(c * N + pick[j]!), yOfRow(c * CAM_PIX + j), 0.02);
         groups[1]!.add(d);
       }
@@ -792,7 +793,7 @@ if (SHOW === 'camera') {
     room.scale.setScalar(RS);
     drawPieces(room, (i) => (pieces[i]!.kind === 'matte' ? hexOf(pieces[i]!.rgb) : pieces[i]!.kind === 'mirror' ? C.bone : C.ochre), 3);
     // The rays, each to where it lands, and the camera's box.
-    for (let j = 0; j < CAM_PIX; j += 4) {
+    for (let j = 0; j < CAM_PIX; j++) {
       const d = rayOf(j);
       let t = 12;
       for (let s2 = 0.05; s2 < 12; s2 += 0.05) {
