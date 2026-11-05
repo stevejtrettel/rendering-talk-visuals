@@ -19,7 +19,10 @@
  *
  * ?panels=invert (the light-field deck, Steve 2026-10-30): E and the
  * equilibrium with an arrow between them, the map E -> (Id - T)^-1 E; no labels
- * in the frame, the deck sets them (KaTeX) over the picture.
+ * in the frame, the deck sets them (KaTeX) over the picture. With `&emitter`
+ * (Steve, 2026-11-04) E is not drawn as its beam in the room but signified:
+ * the room dark, a white rectangle in the lamp, the light that leaves it.
+ * E itself is unchanged (the beam); only its picture is.
  *
  * Other modes, kept: ?panels=three draws L = E + T(L) for the equilibrium
  * computed by light tracing, T(L) by its own trace (a check that the computed
@@ -31,7 +34,7 @@ import * as THREE from 'three';
 import { createStage, createUI, C } from '@';
 import { polyline } from '@/lines';
 import { label, setText } from '@/text';
-import { NS, ROOM_HALF, L_REF, drawRoom, fluenceOf, exposureOf, fluenceMesh, traceCandidate, type Candidate } from '@/beamroom';
+import { NS, ROOM_HALF, L_REF, GRID_SIZE, HOUSING, SOURCE, add, drawRoom, fluenceOf, exposureOf, fluenceMesh, traceCandidate, type Candidate } from '@/beamroom';
 
 const ORTHO_H = 3;
 const stage = createStage({ camera: 'ortho', position: [0, 0, 10], target: [0, 0, 0], orthoHeight: ORTHO_H, lights: false, controls: false });
@@ -55,7 +58,23 @@ const nameUnder = (x: number, s: number, text: string) =>
 if (MODE === 'invert') {
   stage.duration = 1;
   const S = 0.38;
-  for (const [which, x] of [['E', -2.75], ['L', 2.75]] as const) roomAt(x, S, fluenceOf(which), which !== 'E');
+  const EMITTER = new URLSearchParams(location.search).has('emitter');
+  for (const [which, x] of [['E', -2.75], ['L', 2.75]] as const) {
+    const room = roomAt(x, S, which === 'E' && EMITTER ? new Float64Array(GRID_SIZE) : fluenceOf(which), which !== 'E');
+    if (which === 'E' && EMITTER) {
+      // The lamp's source, a white rectangle just inside its opening, and a soft glow round it.
+      const at = (a: number, n: number) => add(add(SOURCE.center, SOURCE.axis, a), { x: -SOURCE.axis.y, y: SOURCE.axis.x }, n);
+      const quad = (a0: number, a1: number, h: number, color: number, opacity: number, z: number) => {
+        const pts = [at(a0, -h), at(a1, -h), at(a1, h), at(a0, h)];
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.Float32BufferAttribute(pts.flatMap((p) => [p.x, p.y, z]), 3));
+        g.setIndex([0, 1, 2, 0, 2, 3]);
+        return new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color, transparent: opacity < 1, opacity }));
+      };
+      room.add(quad(-0.22, 0.16, 0.86, 0xffffff, 0.18, 0.04), quad(-0.12, 0.12, 0.72, 0xffffff, 1, 0.05));
+      void HOUSING;
+    }
+  }
   const x0 = -2.75 + ROOM_HALF.x * S + 0.18;
   const x1 = 2.75 - ROOM_HALF.x * S - 0.18;
   stage.add(polyline([[x0, 0, 0], [x1, 0, 0]], { color: C.bone, width: 3 }));
