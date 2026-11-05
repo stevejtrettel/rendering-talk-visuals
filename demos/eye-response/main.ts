@@ -16,7 +16,13 @@
  * beam room's (src/beamscene.ts): its lamp, and the lamp's light off each wall
  * (lamp times the wall's reflectance), drawn to peak 1.
  *
- * `spectrum` switches (also `&spectrum=` in the URL: lamp, red, green, white).
+ * By default the spectrum moves (Steve, 2026-11-04: "just a time varying
+ * spectrum, and then the bar graphs changing"): a low floor and three bumps,
+ * blue, green and red, their heights a third of a cycle apart so the light
+ * walks round the hues, their centres drifting; it returns to where it
+ * started every PERIOD seconds. The bars follow it. `spectrum` switches
+ * (also `&spectrum=` in the URL: moving, lamp, red, green, white); the fixed
+ * ones are the beam room's.
  */
 
 import * as THREE from 'three';
@@ -28,7 +34,8 @@ import { SUN, RED, GREEN, WHITE, NS, WL0, WL1 } from '@/beamscene';
 
 const ORTHO_H = 3;
 const stage = createStage({ camera: 'ortho', position: [0, 0, 10], target: [0, 0, 0], orthoHeight: ORTHO_H, lights: false, controls: false });
-stage.duration = 1;
+const PERIOD = 12; // seconds, one loop of the moving spectrum
+stage.duration = PERIOD;
 const ui = createUI(stage);
 
 // --- Figure spec -----------------------------------------------------------
@@ -37,10 +44,10 @@ const CURVE = { x0: -0.95, x1: 1.55, h: 0.72 };
 const ROWS = [1.0, -0.1, -1.2]; // each row's baseline (long, medium, short), below the slide's title
 const BAR = { x0: 2.55, max: 2.2, h: 0.42 };
 const M = 220; // samples across the band, for drawing and integrating
-const SPECTRA = { lamp: 'lamp', red: 'off the red wall', green: 'off the green wall', white: 'off the white wall' } as const;
+const SPECTRA = { moving: '', lamp: 'lamp', red: 'off the red wall', green: 'off the green wall', white: 'off the white wall' } as const;
 type Which = keyof typeof SPECTRA;
 const start = new URLSearchParams(location.search).get('spectrum');
-const params = { spectrum: (start && start in SPECTRA ? start : 'red') as Which };
+const params = { spectrum: (start && start in SPECTRA ? start : 'moving') as Which };
 
 // --- Curves on [WL0, WL1] ----------------------------------------------------
 const nm = (k: number) => WL0 + ((WL1 - WL0) * k) / (M - 1);
@@ -61,7 +68,16 @@ const CONES = [
   const area = ys.reduce((a, b) => a + b, 0);
   return { ...c, ys: ys.map((y) => y / peak), area: area / peak };
 });
-function spectrumOf(w: Which): number[] {
+/** The moving spectrum at time t: a floor and three bumps, heights phased a third of a cycle apart. */
+function movingAt(t: number): number[] {
+  const ph = (2 * Math.PI * t) / PERIOD;
+  const bumps = [450, 540, 625].map((c, k) => ({
+    c: c + 15 * Math.sin(2 * ph + k),
+    h: 0.12 + 0.78 * (0.5 + 0.5 * Math.cos(ph - (2 * Math.PI * k) / 3)),
+  }));
+  return Array.from({ length: M }, (_, k) => Math.min(1, 0.05 + bumps.reduce((a, b) => a + b.h * Math.exp(-(((nm(k) - b.c) / 32) ** 2)), 0)));
+}
+function spectrumOf(w: Exclude<Which, 'moving'>): number[] {
   const ys = Array.from({ length: M }, (_, k) => at(SUN, nm(k)) * (w === 'lamp' ? 1 : at(w === 'red' ? RED : w === 'green' ? GREEN : WHITE, nm(k))));
   const peak = Math.max(...ys);
   return ys.map((y) => y / peak);
@@ -94,7 +110,7 @@ function arrow(from: [number, number], to: [number, number], color: number): voi
 }
 
 // The spectrum.
-const spec = panel(SPEC.x0, SPEC.x1, SPEC.yb, SPEC.h, spectrumOf(params.spectrum), C.bone);
+const spec = panel(SPEC.x0, SPEC.x1, SPEC.yb, SPEC.h, movingAt(0), C.bone); // redrawn by show()
 stage.add(label('spectrum', { size: 0.2, color: C.bone, anchorX: 'center', anchorY: 'bottom', position: [(SPEC.x0 + SPEC.x1) / 2, SPEC.yb + SPEC.h + 0.15, 0] }));
 const specName = label('', { size: 0.16, color: C.ash, anchorX: 'center', anchorY: 'top', position: [(SPEC.x0 + SPEC.x1) / 2, SPEC.yb - 0.32, 0] });
 stage.add(specName);
@@ -116,8 +132,8 @@ const bars = CONES.map((c, r) => {
   return { bar, value, c, y: yb + CURVE.h * 0.45 };
 });
 
-function show(): void {
-  const ys = spectrumOf(params.spectrum);
+function show(t = 0): void {
+  const ys = params.spectrum === 'moving' ? movingAt(t) : spectrumOf(params.spectrum);
   const pts = ys.map((y, k) => [SPEC.x0 + ((SPEC.x1 - SPEC.x0) * k) / (M - 1), SPEC.yb + y * SPEC.h, 0.1] as [number, number, number]);
   setPolyline(spec.line, pts);
   const shape = new THREE.Shape();
@@ -137,5 +153,8 @@ function show(): void {
   }
 }
 show();
-ui.params.add(params, 'spectrum', Object.keys(SPECTRA)).onChange(show);
+ui.params.add(params, 'spectrum', Object.keys(SPECTRA)).onChange(() => show(stage.t));
+stage.frame((t) => {
+  if (params.spectrum === 'moving') show(t);
+});
 stage.start();
