@@ -59,7 +59,14 @@
  *           running across the bottom of the screen the whole time"): the lens
  *           camera's, as are the pixels that grow (so they match it; a lens
  *           pixel averages its 6 rays, which differs from the line's middle
- *           where a column straddles two colours). The view's field of view is the camera's
+ *           where a column straddles two colours). `&traced` (Steve: "what if we
+ *           do this with our much higher resolution room ... traced
+ *           throughout!"): everything from the traced room instead
+ *           (src/beamroom.ts, the light of slides 29 and 55): the floor its
+ *           picture, each wall and mirror (in thin strips) coloured by the
+ *           light leaving it toward the camera, read back exactly
+ *           (lightAlong), and the image, along the bottom and grown at the end,
+ *           the same lens camera's from that light. The view's field of view is the camera's
  *           (90 degrees across: sensor 1.6 wide at depth 0.8), so pixel j's
  *           ray is the middle of column j exactly. A pinhole, not slide 58's
  *           lens, so the match is exact.
@@ -681,16 +688,21 @@ if (SHOW === 'inverse') {
 
 if (SHOW === 'view') {
   const cam = stage.camera as THREE.PerspectiveCamera;
-  // L for the beam, off the baked inverse (as on the slides before).
+  const TRACED = q.has('traced');
+  // The traced room (only when asked for: importing it reads its baked light).
+  const BR = TRACED ? await import('@/beamroom') : null;
+  // L for the beam, off the baked inverse (as on the slides before), for the discretized room.
   let INV: (Float32Array | Float64Array)[] | null = null;
-  try {
-    const res = await fetch(new URL('discrete-inverse.bin', document.baseURI));
-    if (res.ok) INV = unpackInverses(await res.arrayBuffer());
-  } catch {
-    // solve instead
-  }
+  if (!TRACED)
+    try {
+      const res = await fetch(new URL('discrete-inverse.bin', document.baseURI));
+      if (res.ok) INV = unpackInverses(await res.arrayBuffer());
+    } catch {
+      // solve instead
+    }
   const E = sourceE('beam');
   const L = [0, 1, 2].map((c) => {
+    if (TRACED) return new Float64Array(N);
     if (!INV) return solve(T, c, E[c]!);
     const out = new Float64Array(N);
     for (let j = 0; j < N; j++) if (E[c]![j]) for (let r = 0; r < N; r++) out[r]! += INV[c]![r * N + j]! * E[c]![j]!;
@@ -708,8 +720,20 @@ if (SHOW === 'view') {
     return v(Math.cos(a), Math.sin(a));
   };
   const lumOf = (r: number, g: number, b: number) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  /** A spectrum as linear sRGB (through the CIE observer; the scale is the exposure's business). */
+  const specRGB = (sp: Float64Array): RGB => {
+    const [X, Y, Z] = BR!.toXYZ(sp);
+    return [3.2406 * X - 1.5372 * Y - 0.4986 * Z, -0.9689 * X + 1.8758 * Y + 0.0415 * Z, 0.0557 * X - 0.204 * Y + 1.057 * Z].map((x) => Math.max(0, x)) as RGB;
+  };
+  /** In the traced room: the light at x travelling in direction w, read back exactly. */
+  const tracedAlong = (x: Vec, w: Vec): RGB => {
+    const sp = new Float64Array(BR!.NS);
+    BR!.lightAlong(x, w, sp, []);
+    return specRGB(sp);
+  };
   /** The light arriving at the pinhole from direction d (looking along d). */
   const seen = (from: Vec, d: Vec): RGB => {
+    if (TRACED) return tracedAlong(from, v(-d.x, -d.y));
     const p = castPiece(from, d);
     if (p < 0) return [0, 0, 0];
     const k = sectorOf(p, v(-d.x, -d.y));
@@ -743,9 +767,10 @@ if (SHOW === 'view') {
   // --- The floor: the room's light from above, as on the earlier slides --------------------
   const GW = 168;
   const GH = Math.round((GW * ROOM_HALF.y) / ROOM_HALF.x);
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(2 * ROOM_HALF.x, 2 * ROOM_HALF.y));
+  const floor = TRACED ? BR!.fluenceMesh(BR!.fluenceOf('L')) : new THREE.Mesh(new THREE.PlaneGeometry(2 * ROOM_HALF.x, 2 * ROOM_HALF.y));
+  floor.position.z = 0;
   stage.add(floor);
-  {
+  if (!TRACED) {
     const F = new Float32Array(GW * GH * 3).fill(NaN);
     const lit = pieces.map((_, pp) => {
       for (let k = 0; k < HALF; k++) for (let c = 0; c < 3; c++) if (L[c]![index(pp, k)]! > 0) return true;
@@ -822,7 +847,29 @@ if (SHOW === 'view') {
     walls.push({ pos, dA: depthOf(a), dB: depthOf(b), mat });
     return new THREE.Mesh(g, mat);
   };
-  pieces.forEach((pc, pp) => {
+  if (TRACED) {
+    // The traced room's own surfaces, in strips about 0.04 long, each side that faces the camera coloured by
+    // the light leaving it toward the pinhole (a mirror's two sides each its own).
+    for (const sg of BR!.segs) {
+      if (sg.kind === 'black') continue;
+      const len = Math.hypot(sg.b.x - sg.a.x, sg.b.y - sg.a.y);
+      const n = Math.max(1, Math.round(len / 0.04));
+      const sides = sg.kind === 'mirror' ? [sg.n, v(-sg.n.x, -sg.n.y)] : [sg.n];
+      for (let k = 0; k < n; k++) {
+        const a = add(sg.a, sub(sg.b, sg.a), k / n);
+        const b = add(sg.a, sub(sg.b, sg.a), (k + 1) / n);
+        const mid = add(a, sub(b, a), 0.5);
+        const toPin = sub(PIN, mid);
+        const dl = Math.hypot(toPin.x, toPin.y);
+        const w = v(toPin.x / dl, toPin.y / dl);
+        for (const nn of sides) {
+          const facing = w.x * nn.x + w.y * nn.y > 0;
+          const rgb: RGB = facing ? tracedAlong(add(mid, w, 1e-3), w) : [0, 0, 0];
+          slabs.add(quad(a, b, colourOf(rgb), v(nn.x * 0.012, nn.y * 0.012)));
+        }
+      }
+    }
+  } else pieces.forEach((pc, pp) => {
     for (let k = 0; k < STRIPS; k++) {
       const a = add(pc.a, sub(pc.b, pc.a), k / STRIPS);
       const b = add(pc.a, sub(pc.b, pc.a), (k + 1) / STRIPS);
