@@ -569,12 +569,14 @@ if (SHOW === 'inverse') {
     ctx.strokeStyle = '#d9d1c2';
     ctx.lineWidth = 3;
     ctx.strokeRect(ox + 1.5, oy + 1.5, w - 3, h - 3);
-    ctx.font = `${Math.round(cols > 1 ? ch * 0.25 : ch * 0.42)}px Menlo, ui-monospace, monospace`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     for (let i = 0; i < rows; i++)
       for (let j = 0; j < cols; j++) {
         const { v, c } = cell(i, j);
+        // Scientific entries are longer: smaller type, so neighbours do not touch.
+        const sci = v !== 0 && Math.abs(v) < 0.001;
+        ctx.font = `${Math.round(cols > 1 ? ch * (sci ? 0.19 : 0.25) : ch * 0.42)}px Menlo, ui-monospace, monospace`;
         ctx.fillStyle = v === 0 ? '#5b636b' : `#${new THREE.Color(hexOfTint(c, 1.3)).getHexString()}`;
         ctx.fillText(fmt(v), ox + (j + 0.5) * cw, oy + (i + 0.5) * ch);
       }
