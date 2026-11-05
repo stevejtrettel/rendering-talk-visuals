@@ -302,3 +302,71 @@ export function lightAt(L: Float64Array[], x: Vec, d: Vec): RGB {
   const i = index(j, k);
   return [L[0]![i]!, L[1]![i]!, L[2]![i]!];
 }
+
+/**
+ * (Id - T)^{-1} for one colour, every entry (row-major N x N), by Gauss-Jordan
+ * elimination with partial pivoting. Dense: light gets from anywhere to
+ * anywhere eventually, so unlike T it has almost no zeros.
+ */
+export function inverse(T: SparseT, c: number): Float64Array {
+  const W = 2 * N;
+  const M = new Float64Array(N * W);
+  for (let r = 0; r < N; r++) {
+    M[r * W + r] = 1;
+    M[r * W + N + r] = 1;
+    const s = T.rowScale[c]![r]!;
+    const cs = T.cols[r]!;
+    const vs = T.vals[r]!;
+    for (let e = 0; e < cs.length; e++) M[r * W + cs[e]!]! -= s * vs[e]!;
+  }
+  for (let k = 0; k < N; k++) {
+    let piv = k;
+    let best = Math.abs(M[k * W + k]!);
+    for (let r = k + 1; r < N; r++) {
+      const a = Math.abs(M[r * W + k]!);
+      if (a > best) {
+        best = a;
+        piv = r;
+      }
+    }
+    if (piv !== k)
+      for (let j = 0; j < W; j++) {
+        const t = M[k * W + j]!;
+        M[k * W + j] = M[piv * W + j]!;
+        M[piv * W + j] = t;
+      }
+    const d = 1 / M[k * W + k]!;
+    for (let j = k; j < W; j++) M[k * W + j]! *= d;
+    for (let r = 0; r < N; r++) {
+      if (r === k) continue;
+      const f = M[r * W + k]!;
+      if (f === 0) continue;
+      const ro = r * W;
+      const ko = k * W;
+      for (let j = k; j < W; j++) M[ro + j]! -= f * M[ko + j]!;
+    }
+  }
+  const inv = new Float64Array(N * N);
+  for (let r = 0; r < N; r++) inv.set(M.subarray(r * W + N, r * W + W), r * N);
+  return inv;
+}
+
+// --- The baked inverses ------------------------------------------------------------
+// (Id - T)^{-1} takes about 2 s a colour, so it is computed at build time
+// (scripts/bake-discrete.mjs) into public/discrete-inverse.bin: two Uint32
+// (magic, N), then the three N x N inverses, R, G, B, row-major, as Float32.
+const INV_MAGIC = 0x494e5631; // "INV1"
+export function packInverses(inv: Float64Array[]): ArrayBuffer {
+  const buf = new ArrayBuffer(8 + 3 * N * N * 4);
+  new Uint32Array(buf, 0, 2).set([INV_MAGIC, N]);
+  const f = new Float32Array(buf, 8);
+  inv.forEach((m, c) => f.set(m, c * N * N));
+  return buf;
+}
+/** The file read back, or null if it was made for a different discretization. */
+export function unpackInverses(buf: ArrayBuffer): Float32Array[] | null {
+  if (buf.byteLength !== 8 + 3 * N * N * 4) return null;
+  const head = new Uint32Array(buf, 0, 2);
+  if (head[0] !== INV_MAGIC || head[1] !== N) return null;
+  return [0, 1, 2].map((c) => new Float32Array(buf, 8 + c * N * N * 4, N * N));
+}

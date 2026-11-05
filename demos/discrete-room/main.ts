@@ -31,6 +31,15 @@
  *           the panel at the right shows that 5 x 5 patch of T's entries; over
  *           a column, 10 of its entries. Nonzero entries in their block's
  *           colour, zeros grey.
+ *   inverse (Steve, 2026-11-04: "draw (Id - T) as a matrix, then draw
+ *           (Id - T)^{-1} as a matrix, then multiply it by E and get a vector
+ *           out, all drawn in this style"): Id - T (T's pattern and the
+ *           diagonal), an arrow, (Id - T)^{-1} (computed at build time,
+ *           scripts/bake-discrete.mjs: dense, 10% zeros against T's 97%;
+ *           brightness on a log scale), E, =, and L = (Id - T)^{-1} E. It
+ *           builds with the deck's steps ({deck: 'step', shown}): 0, Id - T;
+ *           1, + its inverse; 2, + E; 3, + L. Alone (not in the deck), all of
+ *           it. The same magnifier, floating by the pointer.
  *   matrix  T (its green channel; the others have the same zeros) as numbers,
  *           a window of it running past, mostly zeros; beside it the whole
  *           matrix, a dot per nonzero entry, and the window's place in it.
@@ -50,7 +59,7 @@ import { createStage, createUI, C, flat } from '@';
 import { polyline, setPolyline } from '@/lines';
 import { label, setText } from '@/text';
 import { type Vec, v, add, sub, ROOM_HALF, ROOM_R } from '@/beamscene';
-import { pieces, N, HALF, SECTORS, SOURCE_PIECE, index, buildT, sourceE, solve, castPiece, sectorOf, type RGB } from '@/discrete-room';
+import { pieces, N, HALF, SECTORS, SOURCE_PIECE, index, buildT, sourceE, solve, castPiece, sectorOf, inverse, unpackInverses, type RGB } from '@/discrete-room';
 import { HOUSING } from '@/beamscene';
 
 const ORTHO_H = 3;
@@ -58,7 +67,7 @@ const HALF_W = (ORTHO_H * 16) / 9;
 const stage = createStage({ camera: 'ortho', position: [0, 0, 10], target: [0, 0, 0], orthoHeight: ORTHO_H, lights: false, controls: false });
 const ui = createUI(stage);
 const q = new URLSearchParams(location.search);
-const SHOW = (q.get('show') ?? 'solve') as 'pieces' | 'row' | 'system' | 'matrix' | 'solve';
+const SHOW = (q.get('show') ?? 'solve') as 'pieces' | 'row' | 'system' | 'inverse' | 'matrix' | 'solve';
 const BARE = q.has('bare');
 const T = buildT();
 const P3 = (p: Vec, z = 0): [number, number, number] => [p.x, p.y, z];
@@ -365,6 +374,250 @@ if (SHOW === 'system') {
     else if (Math.abs(wx - X.L1) < W) zoomVec('L', L, X.L1, i);
     else if (Math.abs(wx - X.E) < W) zoomVec('E', E, X.E, i);
     else if (Math.abs(wx - X.L2) < W) zoomVec('L', L, X.L2, i);
+  });
+}
+
+if (SHOW === 'inverse') {
+  stage.duration = 1;
+  const NN = 3 * N;
+  const PX = 456;
+  const S = 3.7; // each matrix's side
+  const CY = -0.05;
+  const W = 0.3; // a column's width
+  const X = { M1: -4.85, M2: -0.45, E: 3.66, eq: 4.15, L: 4.66 };
+  const TINT: RGB[] = [[0.85, 0.36, 0.28], [0.45, 0.72, 0.38], [0.42, 0.62, 0.86]];
+  const hexOfTint = (c: number, b = 1) => new THREE.Color().setRGB(...(TINT[c]!.map((t) => Math.min(1, t * b)) as RGB), THREE.LinearSRGBColorSpace).getHex();
+  // (Id - T)^{-1}: baked at build time; computed here only if the file is missing (several seconds).
+  let INV: (Float32Array | Float64Array)[] | null = null;
+  try {
+    const res = await fetch(new URL('discrete-inverse.bin', document.baseURI));
+    if (res.ok) INV = unpackInverses(await res.arrayBuffer());
+  } catch {
+    // fall through
+  }
+  INV ??= [0, 1, 2].map((c) => inverse(T, c));
+  const E = sourceE('ray');
+  const L = [0, 1, 2].map((c) => {
+    const out = new Float64Array(N);
+    for (let r = 0; r < N; r++) {
+      let acc = 0;
+      for (let j = 0; j < N; j++) if (E[c]![j]) acc += INV![c]![r * N + j]! * E[c]![j]!;
+      out[r] = acc;
+    }
+    return out;
+  });
+  const idt = (R: number, Cc: number) => {
+    const c = Math.floor(R / N);
+    if (Math.floor(Cc / N) !== c) return { v: 0, c };
+    const r = R - c * N;
+    const col = Cc - c * N;
+    let v = r === col ? 1 : 0;
+    const cs = T.cols[r]!;
+    for (let e = 0; e < cs.length; e++) if (cs[e] === col) v -= T.rowScale[c]![r]! * T.vals[r]![e]!;
+    return { v, c };
+  };
+  const invAt = (R: number, Cc: number) => {
+    const c = Math.floor(R / N);
+    if (Math.floor(Cc / N) !== c) return { v: 0, c };
+    return { v: INV![c]![(R - c * N) * N + (Cc - c * N)]!, c };
+  };
+  const vecAt = (F: Float64Array[], i: number) => {
+    const c = Math.floor(i / N);
+    return { v: F[c]![i - c * N]!, c };
+  };
+  const groups = [new THREE.Group(), new THREE.Group(), new THREE.Group(), new THREE.Group()];
+  groups.forEach((g) => stage.add(g));
+  const box = (g: THREE.Group, x0: number, x1: number, h: number) =>
+    g.add(polyline([[x0, CY - h / 2, 0.01], [x1, CY - h / 2, 0.01], [x1, CY + h / 2, 0.01], [x0, CY + h / 2, 0.01], [x0, CY - h / 2, 0.01]], { color: C.slate, width: 1.5 }));
+  const image = (g: THREE.Group, data: Uint8Array, w: number, h: number, x: number, sw: number, sh: number) => {
+    const tex = new THREE.DataTexture(data, w, h, THREE.RGBAFormat);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.needsUpdate = true;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(sw, sh), new THREE.MeshBasicMaterial({ map: tex }));
+    m.position.set(x, CY, 0);
+    g.add(m);
+  };
+  const put = (data: Uint8Array, o: number, hex: number) => {
+    data[o] = (hex >> 16) & 255;
+    data[o + 1] = (hex >> 8) & 255;
+    data[o + 2] = hex & 255;
+  };
+  // Id - T: T's pattern, and the diagonal.
+  {
+    const data = new Uint8Array(PX * PX * 4);
+    for (let i = 0; i < PX * PX; i++) data[i * 4 + 3] = 255;
+    for (let c = 0; c < 3; c++)
+      for (let r = 0; r < N; r++) {
+        for (const col of T.cols[r]!) put(data, ((PX - 1 - Math.floor(((c * N + r) * PX) / NN)) * PX + Math.floor(((c * N + col) * PX) / NN)) * 4, hexOfTint(c, 0.8));
+        const d = Math.floor(((c * N + r) * PX) / NN);
+        put(data, ((PX - 1 - d) * PX + d) * 4, 0xf2ece0);
+      }
+    image(groups[0]!, data, PX, PX, X.M1 + S / 2, S, S);
+    box(groups[0]!, X.M1, X.M1 + S, S);
+  }
+  // The arrow, and (Id - T)^{-1}: each drawn pixel the mean size of the entries it covers, on a log scale.
+  {
+    const ax0 = X.M1 + S + 0.12;
+    const ax1 = X.M2 - 0.12;
+    groups[1]!.add(polyline([[ax0, CY, 0], [ax1, CY, 0]], { color: C.bone, width: 3 }));
+    groups[1]!.add(polyline([[ax1 - 0.13, CY + 0.1, 0], [ax1, CY, 0], [ax1 - 0.13, CY - 0.1, 0]], { color: C.bone, width: 3 }));
+    const mean = new Float64Array(PX * PX);
+    const cnt = new Float64Array(PX * PX);
+    for (let c = 0; c < 3; c++)
+      for (let r = 0; r < N; r++) {
+        const pr = Math.floor(((c * N + r) * PX) / NN);
+        for (let j = 0; j < N; j++) {
+          const pc = Math.floor(((c * N + j) * PX) / NN);
+          mean[pr * PX + pc]! += Math.abs(INV[c]![r * N + j]!);
+          cnt[pr * PX + pc]! += 1;
+        }
+      }
+    const vals: number[] = [];
+    for (let k = 0; k < PX * PX; k++) if (cnt[k]) {
+      mean[k] = mean[k]! / cnt[k]!;
+      if (mean[k]! > 0) vals.push(mean[k]!);
+    }
+    vals.sort((a, b) => a - b);
+    const lo = Math.log10(vals[Math.floor(vals.length * 0.05)]!);
+    const hi = Math.log10(vals[Math.floor(vals.length * 0.995)]!);
+    const data = new Uint8Array(PX * PX * 4);
+    for (let pr = 0; pr < PX; pr++)
+      for (let pc = 0; pc < PX; pc++) {
+        const o = ((PX - 1 - pr) * PX + pc) * 4;
+        data[o + 3] = 255;
+        const v = mean[pr * PX + pc]!;
+        if (!(v > 0)) continue;
+        const b = Math.max(0.08, Math.min(1, (Math.log10(v) - lo) / (hi - lo)));
+        put(data, o, hexOfTint(Math.floor((pr * NN) / PX / N), b));
+      }
+    image(groups[1]!, data, PX, PX, X.M2 + S / 2, S, S);
+    box(groups[1]!, X.M2, X.M2 + S, S);
+  }
+  // A column of 4,104 entries (as on the system slide).
+  const lv: number[] = [];
+  for (const f of L) for (const x of f) if (x > 0) lv.push(x);
+  lv.sort((a, b) => a - b);
+  const qL = lv[Math.floor(lv.length * 0.7)]! || 1;
+  function column(g: THREE.Group, F: Float64Array[], x: number): void {
+    const data = new Uint8Array(PX * 4);
+    for (let r = 0; r < PX; r++) {
+      const i0 = Math.floor((r * NN) / PX);
+      const i1 = Math.floor(((r + 1) * NN) / PX);
+      let acc = 0;
+      let c = 0;
+      for (let i = i0; i < i1; i++) {
+        c = Math.floor(i / N);
+        acc += F[c]![i - c * N]! / (i1 - i0);
+      }
+      put(data, (PX - 1 - r) * 4, hexOfTint(c, 1.15 * (1 - Math.exp(-acc / qL))));
+      data[(PX - 1 - r) * 4 + 3] = 255;
+    }
+    image(g, data, 1, PX, x, W, S);
+    box(g, x - W / 2, x + W / 2, S);
+  }
+  column(groups[2]!, E.map((e) => e.map(() => 0)), X.E); // E is zero but for the source, marked below
+  for (let c = 0; c < 3; c++)
+    for (let i = 0; i < N; i++)
+      if (E[c]![i]! > 0) {
+        const mk = new THREE.Mesh(new THREE.PlaneGeometry(W, 0.07), flat(hexOfTint(c, 1.2)));
+        mk.position.set(X.E, CY + S / 2 - ((c * N + i + 0.5) / NN) * S, 0.02);
+        groups[2]!.add(mk);
+      }
+  groups[3]!.add(label('=', { size: 0.4, color: C.bone, anchorX: 'center', anchorY: 'middle', position: [X.eq, CY, 0] }));
+  column(groups[3]!, L, X.L);
+
+  // --- Building with the deck ------------------------------------------------------------
+  const setShown = (n: number) => groups.forEach((g, k) => (g.visible = k <= n));
+  setShown(window.parent !== window ? 0 : 3);
+  window.addEventListener('message', (e) => {
+    const d = e.data as { deck?: string; shown?: number } | null;
+    if (d?.deck === 'step' && typeof d.shown === 'number') setShown(d.shown);
+  });
+  window.parent?.postMessage({ demo: 'ready' }, '*');
+
+  // --- The magnifier, floating by the pointer ---------------------------------------------
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 800;
+  const ctx = cv.getContext('2d')!;
+  const ztex = new THREE.CanvasTexture(cv);
+  ztex.colorSpace = THREE.SRGBColorSpace;
+  const ZS = 2.0;
+  const panel = new THREE.Mesh(new THREE.PlaneGeometry(ZS, ZS), new THREE.MeshBasicMaterial({ map: ztex, transparent: true }));
+  const mark = polyline(Array.from({ length: 5 }, () => [0, 0, 0] as [number, number, number]), { color: C.bone, width: 2 });
+  const zt = label('', { size: 0.13, color: C.ash, anchorX: 'center', anchorY: 'bottom', position: [0, 0, 0.3] });
+  zt.textAlign = 'center';
+  stage.add(panel, mark, zt);
+  panel.visible = mark.visible = zt.visible = false;
+  const fmt = (x: number) => {
+    if (x === 0) return '0';
+    const a = Math.abs(x);
+    // Small entries in scientific form, so a tiny nonzero never reads as zero.
+    const t = a >= 0.995 ? a.toFixed(3) : a >= 0.01 ? a.toFixed(3).replace(/^0\./, '.') : a >= 0.001 ? a.toFixed(4).replace(/^0\./, '.') : a.toExponential(1).replace('e-', 'e−');
+    return x < 0 ? `−${t}` : t;
+  };
+  const rect = (x0: number, y0: number, x1: number, y1: number): [number, number, number][] => [[x0, y0, 0.25], [x1, y0, 0.25], [x1, y1, 0.25], [x0, y1, 0.25], [x0, y0, 0.25]];
+  function zoom(rows: number, cols: number, cell: (i: number, j: number) => { v: number; c: number }, title: string, bx: [number, number, number, number]): void {
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    const ch = cv.height / Math.max(rows, cols);
+    const cw = cols === 1 ? ch * 3 : ch;
+    const w = cw * cols;
+    const h = ch * rows;
+    const ox = (cv.width - w) / 2;
+    const oy = (cv.height - h) / 2;
+    ctx.fillStyle = 'rgba(14,14,14,0.96)';
+    ctx.fillRect(ox, oy, w, h);
+    ctx.strokeStyle = '#d9d1c2';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(ox + 1.5, oy + 1.5, w - 3, h - 3);
+    ctx.font = `${Math.round(cols > 1 ? ch * 0.25 : ch * 0.42)}px Menlo, ui-monospace, monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (let i = 0; i < rows; i++)
+      for (let j = 0; j < cols; j++) {
+        const { v, c } = cell(i, j);
+        ctx.fillStyle = v === 0 ? '#5b636b' : `#${new THREE.Color(hexOfTint(c, 1.3)).getHexString()}`;
+        ctx.fillText(fmt(v), ox + (j + 0.5) * cw, oy + (i + 0.5) * ch);
+      }
+    ztex.needsUpdate = true;
+    // Float above the marked spot (below it near the top), kept in the frame.
+    const k = ZS / cv.width;
+    const pw = w * k;
+    const ph = h * k;
+    let px = (bx[0] + bx[2]) / 2;
+    px = Math.max(-HALF_W + pw / 2 + 0.1, Math.min(HALF_W - pw / 2 - 0.1, px));
+    let py = bx[3] + 0.25 + ph / 2;
+    if (py + ph / 2 > ORTHO_H - 0.35) py = bx[1] - 0.25 - ph / 2;
+    panel.position.set(px, py, 0.2);
+    zt.position.set(px, py + ph / 2 + 0.05, 0.3);
+    setText(zt, title);
+    setPolyline(mark, rect(...bx));
+    panel.visible = mark.visible = zt.visible = true;
+  }
+  const PAD = 0.04;
+  const yOf = (i: number) => CY + S / 2 - (i / NN) * S;
+  const block = (i: number) => 'RGB'[Math.floor(i / N)]!;
+  const canvas = stage.renderer.domElement;
+  canvas.addEventListener('pointermove', (e) => {
+    const rr = canvas.getBoundingClientRect();
+    const wx = (((e.clientX - rr.left) / rr.width) * 2 - 1) * HALF_W;
+    const wy = -(((e.clientY - rr.top) / rr.height) * 2 - 1) * ORTHO_H;
+    const inMat = (x0: number) => wx >= x0 && wx <= x0 + S && Math.abs(wy - CY) <= S / 2;
+    const i = Math.floor(((CY + S / 2 - wy) / S) * NN);
+    const matrix = (x0: number, at: typeof idt, name: string) => {
+      const R = Math.max(0, Math.min(NN - 5, i - 2));
+      const Cc = Math.max(0, Math.min(NN - 5, Math.floor(((wx - x0) / S) * NN) - 2));
+      const xOf = (j: number) => x0 + (j / NN) * S;
+      zoom(5, 5, (a, b) => at(R + a, Cc + b), `${name}, rows ${R + 1}–${R + 5}, columns ${Cc + 1}–${Cc + 5}`, [xOf(Cc) - PAD, yOf(R + 5) - PAD, xOf(Cc + 5) + PAD, yOf(R) + PAD]);
+    };
+    const vector = (F: Float64Array[], x: number, name: string) => {
+      const i0 = Math.max(0, Math.min(NN - 10, i - 5));
+      zoom(10, 1, (a) => vecAt(F, i0 + a), `${name}, entries ${i0 + 1}–${i0 + 10} (${block(i0)})`, [x - W / 2 - PAD, yOf(i0 + 10) - PAD, x + W / 2 + PAD, yOf(i0) + PAD]);
+    };
+    if (groups[0]!.visible && inMat(X.M1)) matrix(X.M1, idt, 'Id − T');
+    else if (groups[1]!.visible && inMat(X.M2)) matrix(X.M2, invAt, 'the inverse of Id − T');
+    else if (groups[2]!.visible && Math.abs(wx - X.E) < W && Math.abs(wy - CY) <= S / 2) vector(E, X.E, 'E');
+    else if (groups[3]!.visible && Math.abs(wx - X.L) < W && Math.abs(wy - CY) <= S / 2) vector(L, X.L, 'L');
+    else panel.visible = mark.visible = zt.visible = false;
   });
 }
 
