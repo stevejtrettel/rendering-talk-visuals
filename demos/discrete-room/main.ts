@@ -40,6 +40,19 @@
  *           builds with the deck's steps ({deck: 'step', shown}): 0, Id - T;
  *           1, + its inverse; 2, + E; 3, + L. Alone (not in the deck), all of
  *           it. The same magnifier, floating by the pointer.
+ *   view    the light field seen from the camera (Steve, 2026-11-04: "a drawing of
+ *           the light field, and then us rotating it and viewing it side on,
+ *           in a perspective view, where our view gives us this pixel image;
+ *           maybe we build the scene out of a thickened material as we
+ *           animate it"). The room from above, its light as the floor; the
+ *           view glides down to the camera's pinhole and turns along its aim
+ *           while the walls and mirrors rise into slabs, each coloured by the
+ *           light leaving it toward the pinhole; at eye level a band marks the
+ *           horizon and the pinhole camera's 16 pixels come in under it, each
+ *           under its own column. The view's field of view is the camera's
+ *           (90 degrees across: sensor 1.6 wide at depth 0.8), so pixel j's
+ *           ray is the middle of column j exactly. A pinhole, not slide 58's
+ *           lens, so the match is exact.
  *   cmatrix the camera's matrix C alone, big, with a floating magnifier on its
  *           entries (Steve, 2026-11-04: "then the matrix that defines the
  *           camera, where we can zoom in on the number entries"): the
@@ -92,12 +105,15 @@ import { type Vec, v, add, sub, ROOM_HALF, ROOM_R, SOURCE } from '@/beamscene';
 import { pieces, N, HALF, SECTORS, isSource, index, buildT, sourceE, solve, castPiece, sectorOf, inverse, unpackInverses, type RGB } from '@/discrete-room';
 import { HOUSING } from '@/beamscene';
 
+const q = new URLSearchParams(location.search);
+const SHOW = (q.get('show') ?? 'solve') as 'pieces' | 'row' | 'system' | 'inverse' | 'view' | 'cmatrix' | 'camera' | 'matrix' | 'solve';
 const ORTHO_H = 3;
 const HALF_W = (ORTHO_H * 16) / 9;
-const stage = createStage({ camera: 'ortho', position: [0, 0, 10], target: [0, 0, 0], orthoHeight: ORTHO_H, lights: false, controls: false });
+const stage =
+  SHOW === 'view'
+    ? createStage({ camera: 'persp', position: [0, 0, 17], target: [0, 0, 0], fov: 20, lights: false, controls: false })
+    : createStage({ camera: 'ortho', position: [0, 0, 10], target: [0, 0, 0], orthoHeight: ORTHO_H, lights: false, controls: false });
 const ui = createUI(stage);
-const q = new URLSearchParams(location.search);
-const SHOW = (q.get('show') ?? 'solve') as 'pieces' | 'row' | 'system' | 'inverse' | 'cmatrix' | 'camera' | 'matrix' | 'solve';
 const BARE = q.has('bare');
 const T = buildT();
 const P3 = (p: Vec, z = 0): [number, number, number] => [p.x, p.y, z];
@@ -650,6 +666,233 @@ if (SHOW === 'inverse') {
     else if (groups[2]!.visible && Math.abs(wx - X.E) < W && Math.abs(wy - CY) <= S / 2) vector(E, X.E, 'E');
     else if (groups[3]!.visible && Math.abs(wx - X.L) < W && Math.abs(wy - CY) <= S / 2) vector(L, X.L, 'L');
     else panel.visible = mark.visible = zt.visible = false;
+  });
+}
+
+if (SHOW === 'view') {
+  const cam = stage.camera as THREE.PerspectiveCamera;
+  // L for the beam, off the baked inverse (as on the slides before).
+  let INV: (Float32Array | Float64Array)[] | null = null;
+  try {
+    const res = await fetch(new URL('discrete-inverse.bin', document.baseURI));
+    if (res.ok) INV = unpackInverses(await res.arrayBuffer());
+  } catch {
+    // solve instead
+  }
+  const E = sourceE('beam');
+  const L = [0, 1, 2].map((c) => {
+    if (!INV) return solve(T, c, E[c]!);
+    const out = new Float64Array(N);
+    for (let j = 0; j < N; j++) if (E[c]![j]) for (let r = 0; r < N; r++) out[r]! += INV[c]![r * N + j]! * E[c]![j]!;
+    return out;
+  });
+  // The camera (pinhole-camera's, and slide 58's place and aim), as a pinhole.
+  const PIN = v(-3.5, -1.3);
+  const AIM = (22 * Math.PI) / 180;
+  const NPIX = 16;
+  const DEPTH = 0.8;
+  const WIDTH = 1.6;
+  const rayOf = (j: number) => {
+    const off = -WIDTH / 2 + (WIDTH * (j + 0.5)) / NPIX; // pixel 0 looks left of the aim (pinhole-camera's numbering)
+    const a = AIM - Math.atan2(off, DEPTH);
+    return v(Math.cos(a), Math.sin(a));
+  };
+  const lumOf = (r: number, g: number, b: number) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  /** The light arriving at the pinhole from direction d (looking along d). */
+  const seen = (from: Vec, d: Vec): RGB => {
+    const p = castPiece(from, d);
+    if (p < 0) return [0, 0, 0];
+    const k = sectorOf(p, v(-d.x, -d.y));
+    return k < 0 ? [0, 0, 0] : ([0, 1, 2].map((c) => L[c]![index(p, k)]!) as RGB);
+  };
+  const pixels = Array.from({ length: NPIX }, (_, j) => seen(PIN, rayOf(j)));
+  const ys = pixels.map((c) => lumOf(...c)).filter((y) => y > 0).sort((a, b) => a - b);
+  const expose = ys[Math.floor(ys.length * 0.9)]! * 1.2 || 1;
+  const toned = (rgb: RGB): RGB => {
+    const Y = lumOf(...rgb) / expose;
+    const k = Y > 0 ? (1 - Math.exp(-Y)) / Y / expose : 0;
+    return rgb.map((x) => Math.min(1, x * k)) as RGB;
+  };
+  const colourOf = (rgb: RGB) => new THREE.Color().setRGB(...toned(rgb), THREE.LinearSRGBColorSpace);
+
+  // --- The floor: the room's light from above, as on the earlier slides --------------------
+  const GW = 168;
+  const GH = Math.round((GW * ROOM_HALF.y) / ROOM_HALF.x);
+  {
+    const F = new Float32Array(GW * GH * 3).fill(NaN);
+    const lit = pieces.map((_, pp) => {
+      for (let k = 0; k < HALF; k++) for (let c = 0; c < 3; c++) if (L[c]![index(pp, k)]! > 0) return true;
+      return false;
+    });
+    const lums: number[] = [];
+    for (let j = 0; j < GH; j++)
+      for (let i = 0; i < GW; i++) {
+        const x = v(-ROOM_HALF.x + ((i + 0.5) / GW) * 2 * ROOM_HALF.x, -ROOM_HALF.y + ((j + 0.5) / GH) * 2 * ROOM_HALF.y);
+        if (!inside(x)) continue;
+        const sum = [0, 0, 0];
+        pieces.forEach((pc, pp) => {
+          if (!lit[pp]) return;
+          const mid = add(pc.a, sub(pc.b, pc.a), 0.5);
+          const toMid = sub(mid, x);
+          const out = v(-toMid.x, -toMid.y);
+          if (out.x * pc.n.x + out.y * pc.n.y <= 0) return;
+          const dist = Math.hypot(toMid.x, toMid.y);
+          if (castPiece(x, v(toMid.x / dist, toMid.y / dist)) !== pp) return;
+          const k = sectorOf(pp, v(out.x / dist, out.y / dist));
+          if (k < 0) return;
+          const aa = Math.atan2(pc.a.y - x.y, pc.a.x - x.x);
+          let da = Math.atan2(pc.b.y - x.y, pc.b.x - x.x) - aa;
+          da = Math.abs(((da + 3 * Math.PI) % (2 * Math.PI)) - Math.PI);
+          for (let c = 0; c < 3; c++) sum[c]! += (L[c]![index(pp, k)]! * da) / (2 * Math.PI);
+        });
+        for (let c = 0; c < 3; c++) F[(j * GW + i) * 3 + c] = sum[c]!;
+        lums.push(lumOf(sum[0]!, sum[1]!, sum[2]!));
+      }
+    lums.sort((a, b) => a - b);
+    const fx = lums[Math.floor(lums.length * 0.9)]! * 1.2 || 1;
+    const data = new Uint8Array(GW * GH * 4);
+    for (let k = 0; k < GW * GH; k++) {
+      if (Number.isNaN(F[k * 3]!)) continue;
+      const rgb = [F[k * 3]!, F[k * 3 + 1]!, F[k * 3 + 2]!] as RGB;
+      const Y = lumOf(...rgb) / fx;
+      const kk = Y > 0 ? (1 - Math.exp(-Y)) / Y / fx : 0;
+      const col = new THREE.Color().setRGB(...(rgb.map((x) => Math.min(1, x * kk)) as RGB), THREE.LinearSRGBColorSpace);
+      data[k * 4] = Math.round(255 * col.r);
+      data[k * 4 + 1] = Math.round(255 * col.g);
+      data[k * 4 + 2] = Math.round(255 * col.b);
+      data[k * 4 + 3] = 255;
+    }
+    for (let k = 0; k < GW * GH; k++)
+      for (let ch = 0; ch < 3; ch++) {
+        const lin = data[k * 4 + ch]! / 255;
+        data[k * 4 + ch] = Math.round(255 * (lin <= 0.0031308 ? 12.92 * lin : 1.055 * lin ** (1 / 2.4) - 0.055));
+      }
+    const tex = new THREE.DataTexture(data, GW, GH, THREE.RGBAFormat);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.magFilter = THREE.LinearFilter;
+    tex.minFilter = THREE.LinearFilter;
+    tex.needsUpdate = true;
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(2 * ROOM_HALF.x, 2 * ROOM_HALF.y), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
+    stage.add(floor);
+  }
+
+  // --- The walls, mirrors and housing, as slabs that rise --------------------------------------
+  const H = 1.4; // the walls' full height
+  const EYE = H / 2;
+  const STRIPS = 12; // per piece, each coloured by the light leaving it toward the pinhole
+  const slabs = new THREE.Group();
+  stage.add(slabs);
+  const quad = (a: Vec, b: Vec, colour: THREE.Color, off: Vec) => {
+    const g = new THREE.BufferGeometry();
+    const p = [a.x + off.x, a.y + off.y, 0, b.x + off.x, b.y + off.y, 0, b.x + off.x, b.y + off.y, 1, a.x + off.x, a.y + off.y, 1];
+    g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
+    g.setIndex([0, 1, 2, 0, 2, 3]);
+    return new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: colour, side: THREE.DoubleSide }));
+  };
+  pieces.forEach((pc, pp) => {
+    for (let k = 0; k < STRIPS; k++) {
+      const a = add(pc.a, sub(pc.b, pc.a), k / STRIPS);
+      const b = add(pc.a, sub(pc.b, pc.a), (k + 1) / STRIPS);
+      const mid = add(a, sub(b, a), 0.5);
+      // The light leaving here toward the pinhole (the side facing it; nothing from behind).
+      const toPin = sub(PIN, mid);
+      const dl = Math.hypot(toPin.x, toPin.y);
+      const dOut = v(toPin.x / dl, toPin.y / dl);
+      const sec = sectorOf(pp, dOut);
+      const rgb: RGB = sec < 0 ? [0, 0, 0] : ([0, 1, 2].map((c) => L[c]![index(pp, sec)]!) as RGB);
+      // Sit each side just off the line, toward its own side, so a mirror's two faces do not fight.
+      slabs.add(quad(a, b, colourOf(rgb), v(pc.n.x * 0.012, pc.n.y * 0.012)));
+    }
+  });
+  for (let k = 0; k < 3; k++) slabs.add(quad(HOUSING[k]!, HOUSING[k + 1]!, new THREE.Color(0x1a1d20), v(0, 0)));
+  // Top edges, so the slabs read as solid as they rise.
+  const tops = new THREE.Group();
+  pieces.forEach((pc, pp) => {
+    if (pc.kind === 'mirror' && pp % 2 === 1) return;
+    tops.add(polyline([[pc.a.x, pc.a.y, 1.001], [pc.b.x, pc.b.y, 1.001]], { color: C.slateDeep, width: 2 }));
+  });
+  slabs.add(tops);
+
+  // --- The pinhole camera, drawn on the floor; its rays ------------------------------------------
+  const camGroup = new THREE.Group();
+  stage.add(camGroup);
+  {
+    const fwd = v(Math.cos(AIM), Math.sin(AIM));
+    const side = v(-Math.sin(AIM), Math.cos(AIM));
+    const corner = (a: number, b: number): [number, number, number] => [PIN.x - fwd.x * a + side.x * b, PIN.y - fwd.y * a + side.y * b, 0.02];
+    camGroup.add(polyline([corner(0, -0.8), corner(0.8, -0.8), corner(0.8, 0.8), corner(0, 0.8)], { color: C.bone, width: 3 }));
+    for (let j = 0; j < NPIX; j++) {
+      const d = rayOf(j);
+      let t = 0.05;
+      while (t < 12 && inside(add(PIN, d, t))) t += 0.03;
+      camGroup.add(polyline([[PIN.x, PIN.y, 0.03], [PIN.x + d.x * t, PIN.y + d.y * t, 0.03]], { color: C.bone, width: 1.2, opacity: 0.5 }));
+    }
+  }
+
+  // --- The pixels and the horizon, in front of the camera at the end -----------------------------
+  const hud = new THREE.Group();
+  cam.add(hud);
+  stage.add(cam);
+  const END_VFOV = (2 * Math.atan(Math.tan(Math.PI / 4) / (16 / 9)) * 180) / Math.PI; // 90 degrees across
+  const HUD_D = 1; // HUD plane distance
+  const halfW = HUD_D * Math.tan(Math.PI / 4);
+  const halfH = halfW / (16 / 9);
+  const tileW = (2 * halfW) / NPIX;
+  const band = new THREE.Mesh(new THREE.PlaneGeometry(2 * halfW, tileW * 0.12), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthTest: false }));
+  band.position.set(0, 0, -HUD_D);
+  hud.add(band);
+  const tiles = Array.from({ length: NPIX }, (_, j) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(tileW * 0.86, tileW * 0.86), new THREE.MeshBasicMaterial({ color: colourOf(pixels[j]!), transparent: true, depthTest: false }));
+    m.position.set(-halfW + (j + 0.5) * tileW, -halfH + tileW * 0.75, -HUD_D);
+    m.renderOrder = 10;
+    hud.add(m);
+    return m;
+  });
+  // A thin line from each tile up to its column's horizon, so the columns line up.
+  const ties = Array.from({ length: NPIX }, (_, j) => {
+    const x = -halfW + (j + 0.5) * tileW;
+    const l = polyline([[x, -halfH + tileW * 1.2, -HUD_D], [x, -tileW * 0.1, -HUD_D]], { color: C.bone, width: 1, opacity: 0.45 });
+    l.renderOrder = 9;
+    hud.add(l);
+    return l;
+  });
+
+  // --- The motion ---------------------------------------------------------------------------------
+  const START_POS = new THREE.Vector3(0, -0.15, 17.5);
+  const END_POS = new THREE.Vector3(PIN.x, PIN.y, EYE);
+  const lookQuat = (pos: THREE.Vector3, target: THREE.Vector3, up: THREE.Vector3) => {
+    const m = new THREE.Matrix4().lookAt(pos, target, up);
+    return new THREE.Quaternion().setFromRotationMatrix(m);
+  };
+  const Q0 = lookQuat(START_POS, new THREE.Vector3(0, -0.15, 0), new THREE.Vector3(0, 1, 0));
+  const Q1 = lookQuat(END_POS, new THREE.Vector3(PIN.x + Math.cos(AIM), PIN.y + Math.sin(AIM), EYE), new THREE.Vector3(0, 0, 1));
+  const T0 = 1.2; // hold the top view
+  const T1 = 7.2; // arrive
+  const T2 = 8.4; // horizon band
+  const T3 = 11; // pixels in
+  stage.loop = false;
+  stage.duration = 13.5;
+  stage.captureEnd = 13.5;
+  const ease = (u: number) => (u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u));
+  stage.frame((t) => {
+    const u = ease((t - T0) / (T1 - T0));
+    // Height first eases down fast, the turn comes in later, so the walls are seen rising from above.
+    const uPos = ease(Math.min(1, ((t - T0) / (T1 - T0)) * 1.05));
+    cam.position.lerpVectors(START_POS, END_POS, uPos);
+    cam.quaternion.slerpQuaternions(Q0, Q1, ease(Math.max(0, ((t - T0) / (T1 - T0) - 0.15) / 0.85)));
+    cam.fov = 20 + (END_VFOV - 20) * u;
+    cam.updateProjectionMatrix();
+    slabs.scale.z = Math.max(0.002, H * ease((t - T0) / ((T1 - T0) * 0.6)));
+    camGroup.visible = u < 0.95;
+    const b = ease((t - T1) / (T2 - T1));
+    (band.material as THREE.MeshBasicMaterial).opacity = 0.45 * b;
+    band.visible = b > 0;
+    tiles.forEach((m, j) => {
+      const s = ease((t - T2 - (j * (T3 - T2)) / NPIX / 1.3) / 0.35);
+      (m.material as THREE.MeshBasicMaterial).opacity = s;
+      m.visible = s > 0;
+      ties[j]!.visible = s > 0.5;
+    });
   });
 }
 
