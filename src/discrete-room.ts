@@ -15,8 +15,9 @@
  *            the start of its stretch of wall to the end; at the rounded
  *            corners a chord), each mirror cut into MIRROR_PIECES, each side
  *            its own piece (the mirrors reflect on both sides), and the lamp's
- *            source, a small piece in the middle of the lamp's opening (E lives
- *            there; it absorbs what arrives).
+ *            source: the lamp's opening, cut into SOURCE_PIECES (E lives there;
+ *            it absorbs what arrives). Its sectors are turned half a sector, so
+ *            one is centred on the lamp's axis.
  *            The housing is black: it blocks light and sends none.
  *   sectors  the circle of directions in SECTORS sectors; half of them point
  *            into the surface, where nothing leaves, so each piece has
@@ -35,12 +36,12 @@
  * series.
  */
 
-import { type Vec, v, add, sub, dot, perp, unit, segs, RED, GREEN, WHITE, MIRROR_R, FLAT, arcPts, HOUSING, SOURCE, toXYZ, spectrum } from './beamscene';
+import { type Vec, v, add, sub, dot, perp, unit, segs, RED, GREEN, WHITE, MIRROR_R, FLAT, arcPts, HOUSING, SOURCE, SUN, toXYZ, spectrum } from './beamscene';
 
 export const PIECE = 0.36;
 export const MIRROR_PIECES = 6;
 export const SECTORS = 24; // on the whole circle
-export const SOURCE_WIDTH = 0.3;
+export const SOURCE_PIECES = 5;
 export const HALF = SECTORS / 2; // outgoing sectors per piece
 const QUAD = 3;
 
@@ -113,22 +114,26 @@ const geos: Geo[] = [];
   const flatPts = Array.from({ length: 31 }, (_, k) => add(FLAT.mid, FLAT.dir, FLAT.half * (-1 + (2 * k) / 30)));
   mirror(flatPts, 'flat mirror');
   mirror(arcPts, 'curved mirror');
-  // The lamp: a small piece in the middle of its opening is the source (Steve:
-  // "a super bright light source inside the emitter"); the rest of the
-  // opening and the housing are black.
+  // The lamp: its whole opening is the source, in SOURCE_PIECES (Steve: "just
+  // do a lower res version of the original E"). Each piece's sectors are
+  // turned half a sector, so the beam's axis runs down the middle of one
+  // sector instead of along a boundary between two.
   const A = SOURCE.axis;
   const o0 = HOUSING[3]!;
   const o1 = HOUSING[0]!;
-  const at = (t: number) => add(o0, sub(o1, o0), t);
-  const s0 = at(0.5 - SOURCE_WIDTH / 2 / Math.hypot(o1.x - o0.x, o1.y - o0.y));
-  const s1 = at(0.5 + SOURCE_WIDTH / 2 / Math.hypot(o1.x - o0.x, o1.y - o0.y));
-  geos.push({ a: o0, b: s0, n: A, front: -1, back: -1 });
-  geos.push({ a: s1, b: o1, n: A, front: -1, back: -1 });
-  geos.push({ a: s0, b: s1, n: A, front: pieces.length, back: -1 });
-  pieces.push({ a: s0, b: s1, n: A, kind: 'source', rgb: [0, 0, 0], name: 'lamp' });
+  const turn = -Math.PI / SECTORS; // half a sector
+  const nTurned = v(A.x * Math.cos(turn) - A.y * Math.sin(turn), A.x * Math.sin(turn) + A.y * Math.cos(turn));
+  for (let j = 0; j < SOURCE_PIECES; j++) {
+    const a = add(o0, sub(o1, o0), j / SOURCE_PIECES);
+    const b = add(o0, sub(o1, o0), (j + 1) / SOURCE_PIECES);
+    geos.push({ a, b, n: A, front: pieces.length, back: -1 });
+    pieces.push({ a, b, n: nTurned, kind: 'source', rgb: [0, 0, 0], name: 'lamp' });
+  }
   for (let k = 0; k < 3; k++) geos.push({ a: HOUSING[k]!, b: HOUSING[k + 1]!, n: perp(unit(sub(HOUSING[k + 1]!, HOUSING[k]!))), front: -1, back: -1 });
 }
-export const SOURCE_PIECE = pieces.length - 1;
+export const isSource = (p: number) => pieces[p]!.kind === 'source';
+/** The middle source piece (for the `ray` and `patch` sources). */
+export const SOURCE_PIECE = pieces.findIndex((p) => p.kind === 'source') + Math.floor(SOURCE_PIECES / 2);
 /** Unknowns per colour. */
 export const N = pieces.length * HALF;
 export const index = (p: number, k: number) => p * HALF + k;
@@ -233,12 +238,52 @@ export function buildT(): SparseT {
   return { cols, vals, rowScale };
 }
 
-/** E: the source alone, white. `ray`: one sector of the opening (a narrow beam); `patch`: every sector (the opening glowing). */
-export function sourceE(kind: 'ray' | 'patch', strength = 1): Float64Array[] {
+/** The error function (Abramowitz and Stegun 7.1.26, to 1.5e-7). */
+function erf(x: number): number {
+  const t = 1 / (1 + 0.3275911 * Math.abs(x));
+  const y = 1 - (((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t) * Math.exp(-x * x);
+  return x >= 0 ? y : -y;
+}
+const gaussMass = (a: number, b: number, sd: number) => (erf(b / (sd * Math.SQRT2)) - erf(a / (sd * Math.SQRT2))) / 2;
+/** The lamp's colour as an RGB multiplier (its spectrum, the brightest channel 1). */
+const SUN_RGB = (() => {
+  const c = rgbOf(SUN);
+  const m = Math.max(...c);
+  return c.map((x) => x / m) as RGB;
+})();
+/**
+ * E. `beam` (the default): the lamp's own beam, at this resolution: across the
+ * opening a Gaussian of SOURCE.waist (cut at 0.9 either side, as the traced
+ * beam is), in angle a Gaussian of SOURCE.sigma about the axis, in the lamp's
+ * colour; each entry the radiance that sends that piece-and-sector's share of
+ * the power. `ray`: the middle piece, the one sector on the axis; `patch`: the
+ * middle piece, every sector. Total power `power` (white: per colour).
+ */
+export function sourceE(kind: 'beam' | 'ray' | 'patch' = 'beam', power = 1): Float64Array[] {
   const E = [0, 1, 2].map(() => new Float64Array(N));
-  for (let k = 0; k < HALF; k++) {
-    if (kind === 'ray' && k !== HALF / 2) continue;
-    for (let c = 0; c < 3; c++) E[c]![index(SOURCE_PIECE, k)] = strength;
+  const first = pieces.findIndex((p) => p.kind === 'source');
+  const o0 = HOUSING[3]!;
+  const o1 = HOUSING[0]!;
+  const half = Math.hypot(o1.x - o0.x, o1.y - o0.y) / 2;
+  for (let j = 0; j < SOURCE_PIECES; j++) {
+    const p = first + j;
+    if (kind !== 'beam' && p !== SOURCE_PIECE) continue;
+    const pc = pieces[p]!;
+    const len = Math.hypot(pc.b.x - pc.a.x, pc.b.y - pc.a.y);
+    // Across the opening: this piece's share of the beam.
+    const s0 = Math.max(-0.9, -half + (2 * half * j) / SOURCE_PIECES);
+    const s1 = Math.min(0.9, -half + (2 * half * (j + 1)) / SOURCE_PIECES);
+    const across = kind === 'beam' ? (s1 > s0 ? gaussMass(s0, s1, SOURCE.waist) / gaussMass(-0.9, 0.9, SOURCE.waist) : 0) : 1;
+    for (let k = 0; k < HALF; k++) {
+      // The sector, as angles from the axis (the sectors are turned half a sector).
+      const a0 = -Math.PI / 2 + (Math.PI * k) / HALF - Math.PI / SECTORS;
+      const a1 = a0 + Math.PI / HALF;
+      const inAngle = kind === 'beam' ? gaussMass(a0, a1, SOURCE.sigma) : kind === 'ray' ? (k === HALF / 2 ? 1 : 0) : 1 / HALF;
+      if (!(across * inAngle > 0)) continue;
+      const cosInt = Math.max(1e-9, Math.sin(Math.min(a1, Math.PI / 2)) - Math.sin(Math.max(a0, -Math.PI / 2)));
+      const radiance = (power * across * inAngle) / (len * cosInt);
+      for (let c = 0; c < 3; c++) E[c]![index(p, k)] = radiance * (kind === 'beam' ? SUN_RGB[c]! : 1);
+    }
   }
   return E;
 }

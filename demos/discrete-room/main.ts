@@ -64,7 +64,7 @@ import { createStage, createUI, C, flat } from '@';
 import { polyline, setPolyline } from '@/lines';
 import { label, setText } from '@/text';
 import { type Vec, v, add, sub, ROOM_HALF, ROOM_R, SOURCE } from '@/beamscene';
-import { pieces, N, HALF, SECTORS, SOURCE_PIECE, index, buildT, sourceE, solve, castPiece, sectorOf, inverse, unpackInverses, type RGB } from '@/discrete-room';
+import { pieces, N, HALF, SECTORS, isSource, index, buildT, sourceE, solve, castPiece, sectorOf, inverse, unpackInverses, type RGB } from '@/discrete-room';
 import { HOUSING } from '@/beamscene';
 
 const ORTHO_H = 3;
@@ -196,7 +196,7 @@ if (SHOW === 'system') {
   const H = 4.4;
   const CY = -0.05;
   const TINT: RGB[] = [[0.85, 0.36, 0.28], [0.45, 0.72, 0.38], [0.42, 0.62, 0.86]];
-  const E = sourceE('ray');
+  const E = sourceE('beam');
   const L = [0, 1, 2].map((c) => solve(T, c, E[c]!));
   const nz = (F: Float64Array[]) => {
     const all: number[] = [];
@@ -401,7 +401,7 @@ if (SHOW === 'inverse') {
     // fall through
   }
   INV ??= [0, 1, 2].map((c) => inverse(T, c));
-  const E = sourceE('ray');
+  const E = sourceE('beam');
   const L = [0, 1, 2].map((c) => {
     const out = new Float64Array(N);
     for (let r = 0; r < N; r++) {
@@ -860,7 +860,7 @@ if (SHOW === 'matrix') {
 
 if (SHOW === 'solve') {
   stage.duration = 1;
-  const params = { source: (q.get('source') === 'patch' ? 'patch' : 'ray') as 'ray' | 'patch' };
+  const params = { source: (['ray', 'patch'].includes(q.get('source') ?? '') ? q.get('source') : 'beam') as 'beam' | 'ray' | 'patch' };
   const MATCH = q.has('match');
   const SCALE = MATCH ? 0.38 : 0.44;
   const PANELS = MATCH ? [{ x: -2.75, y: 0 }, { x: 2.75, y: 0 }] : [{ x: -2.72, y: -0.15 }, { x: 2.72, y: -0.15 }];
@@ -938,6 +938,8 @@ if (SHOW === 'solve') {
       }
     return F;
   }
+  /** Tone mapping by brightness, keeping the hue (as the traced pictures do: beamroom.ts fluenceMesh). */
+  const lumOf = (r: number, g: number, b: number) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
   function fillImage(F: Float32Array, expose: number): THREE.Mesh {
     const data = new Uint8Array(GW * GH * 4);
     for (let j = 0; j < GH; j++)
@@ -945,7 +947,9 @@ if (SHOW === 'solve') {
         if (Number.isNaN(F[(j * GW + i) * 3]!)) continue;
         const s = [0, 1, 2].map((ch) => F[(j * GW + i) * 3 + ch]!);
         const o = (j * GW + i) * 4;
-        const rgb = s.map((y) => 1 - Math.exp(-y / expose)) as RGB;
+        const Y = lumOf(s[0]!, s[1]!, s[2]!) / expose;
+        const k = Y > 0 ? (1 - Math.exp(-Y)) / Y / expose : 0;
+        const rgb = s.map((y) => Math.min(1, y * k)) as RGB;
         const col = new THREE.Color().setRGB(...rgb, THREE.LinearSRGBColorSpace);
         data[o] = Math.round(col.r * 255);
         data[o + 1] = Math.round(col.g * 255);
@@ -980,12 +984,26 @@ if (SHOW === 'solve') {
         })
       : [0, 1, 2].map((c) => solve(T, c, E[c]!));
     const ms = performance.now() - t0;
-    // Exposure: the solved room's light, the 70th percentile of its cells (the source's own beam is far brighter and saturates).
+    // Exposure as the traced pictures set it (beamroom.ts exposureOf): the 90th percentile of the lit cells' brightness, times 1.2.
     const fills = [fillOf(E), fillOf(L)];
     const lum: number[] = [];
-    for (let k = 0; k < GW * GH; k++) if (!Number.isNaN(fills[1]![k * 3]!)) lum.push(Math.max(fills[1]![k * 3]!, fills[1]![k * 3 + 1]!, fills[1]![k * 3 + 2]!));
+    for (let k = 0; k < GW * GH; k++) {
+      const Y = lumOf(fills[1]![k * 3]!, fills[1]![k * 3 + 1]!, fills[1]![k * 3 + 2]!);
+      if (Y > 0) lum.push(Y);
+    }
     lum.sort((a, b) => a - b);
-    const expose = lum[Math.floor(lum.length * 0.7)]! || 1;
+    const expose = lum[Math.floor(lum.length * 0.9)]! * 1.2 || 1;
+    // The walls in the light leaving them, scaled by a bright-but-ordinary wall (the 90th percentile, as beamroom.ts L_REF).
+    const wallY = pieces
+      .map((pc, i) => {
+        if (pc.kind !== 'matte') return 0;
+        let y = 0;
+        for (let k = 0; k < HALF; k++) y += lumOf(L[0]![index(i, k)]!, L[1]![index(i, k)]!, L[2]![index(i, k)]!) / HALF;
+        return y;
+      })
+      .filter((y) => y > 0)
+      .sort((a, b) => a - b);
+    const wallRef = wallY[Math.floor(wallY.length * 0.9)]! || 1;
     [E, L].forEach((F, n) => {
       const g = groups[n]!;
       if (MATCH && n === 0) {
@@ -1009,12 +1027,12 @@ if (SHOW === 'solve') {
       }
       const lines = new THREE.Group();
       drawPieces(lines, (i) => {
-        if (i === SOURCE_PIECE) return 0xffffff;
+        if (isSource(i)) return 0xffffff;
         const p = pieces[i]!;
         const s = [0, 1, 2].map((c) => {
           let t = 0;
           for (let k = 0; k < HALF; k++) t += F[c]![index(i, k)]!;
-          return 1 - Math.exp(-t / HALF / (expose * 2));
+          return Math.min(1, t / HALF / wallRef);
         }) as RGB;
         // A mirror shows what it reflects, both sides; draw it as the brighter side.
         if (p.kind === 'mirror') return C.bone;
@@ -1026,7 +1044,7 @@ if (SHOW === 'solve') {
     if (!MATCH) setText(note, `solved by Gaussian elimination on Id − T, ${N.toLocaleString('en-US')} × ${N.toLocaleString('en-US')}, three times (once per colour): ${Math.round(ms)} ms`);
   }
   show();
-  ui.params.add(params, 'source', ['ray', 'patch']).onChange(show);
+  ui.params.add(params, 'source', ['beam', 'ray', 'patch']).onChange(show);
 }
 
 stage.start();
