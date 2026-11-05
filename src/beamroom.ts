@@ -48,164 +48,49 @@ import {
   toXYZ,
 } from './beamscene';
 export * from './beamscene';
+import { type Traced, GW, GH, CELL, BOUNCES, GRID_SIZE, toXYZw, track, traceRoom, unpack } from './beamtrace';
 
 // --- Light tracing: the equilibrium irradiance on every diffuse surface, and the
 // fluence in the room (for colouring it) -------------------------------------------
-const GW = 336;
-const GH = 184;
-const CELL = (2 * ROOM_HALF.x) / GW;
-const FLUENCE = new Float64Array(GW * GH * 3); // XYZ
-/** The same, of the lamp's light alone: each photon's track before it first meets anything (E). */
-const FLUENCE_E = new Float64Array(GW * GH * 3);
-/**
- * The same, split by how many times the light has interacted (a mirror or a
- * wall) since it left the lamp: [0] is E, [n] is T^n E, the last holds every
- * bounce from BOUNCES on. Their sum is FLUENCE exactly: the equilibrium is the
- * series, term by term (beam-series).
- */
-export const BOUNCES = 8;
-const FLUENCE_N = Array.from({ length: BOUNCES + 1 }, () => new Float64Array(GW * GH * 3));
-/** The power (luminance, Y) of each term: the light as it sets out after n interactions. */
-const POWER_N = new Float64Array(BOUNCES + 1);
-/** Every photon a mirror sent on, as it left the mirror (for T, below). */
-const MIRROR_OUT: { p: Vec; d: Vec; s: Seg; xyz: [number, number, number] }[] = [];
-const toXYZw = (w: Float64Array): [number, number, number] => {
-  const xyz: [number, number, number] = [0, 0, 0];
-  for (let i = 0; i < NS; i++) CMF.forEach((f, c) => (xyz[c] += f(Math.min(nmAt(i), 670)) * w[i]!));
-  return xyz;
-};
-/** Add a photon's track from a to b, power xyz, into a fluence grid. */
-function track(a: Vec, b: Vec, xyz: [number, number, number], into = FLUENCE): void {
-  const len = Math.hypot(b.x - a.x, b.y - a.y);
-  const n = Math.max(1, Math.ceil(len / (CELL * 0.6)));
-  const step = len / n;
-  for (let k = 0; k < n; k++) {
-    const p = add(a, sub(b, a), (k + 0.5) / n);
-    const gx = Math.floor((p.x + ROOM_HALF.x) / CELL);
-    const gy = Math.floor((p.y + ROOM_HALF.y) / CELL);
-    if (gx < 0 || gy < 0 || gx >= GW || gy >= GH) continue;
-    const o = (gy * GW + gx) * 3;
-    into[o]! += xyz[0] * step;
-    into[o + 1]! += xyz[1] * step;
-    into[o + 2]! += xyz[2] * step;
-  }
-}
-const PHOTONS = 60000;
-const E = new Float64Array(binLength.length * NS); // irradiance, power per length, per wavelength
-let seed = 0x1234567;
-const rand = () => {
-  seed ^= seed << 13;
-  seed ^= seed >>> 17;
-  seed ^= seed << 5;
-  return (seed >>> 0) / 4294967296;
-};
-const gauss = () => Math.sqrt(-2 * Math.log(1 - rand())) * Math.cos(2 * Math.PI * rand());
-{
-  const w = new Float64Array(NS);
-  for (let k = 0; k < PHOTONS; k++) {
-    // From the opening, across it Gaussian, in angle Gaussian about the axis.
-    let s = gauss() * SOURCE.waist;
-    while (Math.abs(s) > 0.9) s = gauss() * SOURCE.waist;
-    let o = add(SOURCE.center, N, s);
-    let d = unit(add(A, N, Math.tan(gauss() * SOURCE.sigma)));
-    for (let i = 0; i < NS; i++) w[i] = SUN[i]! / PHOTONS;
-    let skip: Seg | null = null;
-    for (let bounce = 0; bounce < 40; bounce++) {
-      const h = hit(o, d, skip);
-      if (!h) break;
-      const xyz = toXYZw(w);
-      track(o, h.p, xyz);
-      track(o, h.p, xyz, FLUENCE_N[Math.min(bounce, BOUNCES)]);
-      POWER_N[Math.min(bounce, BOUNCES)]! += xyz[1];
-      if (bounce === 0) track(o, h.p, xyz, FLUENCE_E);
-      if (h.s.kind === 'black') break;
-      if (h.s.kind === 'mirror') {
-        for (let i = 0; i < NS; i++) w[i]! *= MIRROR_R;
-        d = reflect(d, h.s.n);
-        MIRROR_OUT.push({ p: h.p, d, s: h.s, xyz: toXYZw(w) });
-      } else {
-        if (dot(d, h.s.n) >= 0) break; // the back of a surface
-        const b = h.s.bin * NS;
-        const len = binLength[h.s.bin]!;
-        for (let i = 0; i < NS; i++) E[b + i]! += w[i]! / len;
-        // Diffuse bounce, Russian roulette on the mean reflectance.
-        const alb = h.s.albedo!;
-        const p = alb.reduce((x, y) => x + y, 0) / NS;
-        if (rand() > p) break;
-        for (let i = 0; i < NS; i++) w[i]! *= alb[i]! / p;
-        // Cosine-weighted in 2D: sin θ uniform on [-1, 1].
-        const st = 2 * rand() - 1;
-        d = unit(add(add(v(0, 0), h.s.n, Math.sqrt(1 - st * st)), perp(h.s.n), st));
+// Traced once at build time (src/beamtrace.ts, scripts/bake-beamroom.mjs) and
+// read here from beamroom.bin; traced on the spot in the dev server (so an
+// edit to the tracing shows at once) or if the file is missing or stale.
+const traced: Traced = await (async () => {
+  if (!import.meta.env.DEV)
+    try {
+      const res = await fetch(new URL('beamroom.bin', document.baseURI));
+      if (res.ok) {
+        const t = unpack(await res.arrayBuffer());
+        if (t) return t;
       }
-      o = h.p;
-      skip = h.s;
+    } catch {
+      // fall through to tracing
     }
-  }
-}
+  return traceRoom();
+})();
+const E = traced.E;
+const POWER_N = traced.POWER_N;
+const FLUENCE_N = traced.FLUENCE_N;
+/** The lamp's light alone (E): each photon's track before it first meets anything, which is term 0. */
+const FLUENCE_E = FLUENCE_N[0]!;
+/** The equilibrium: the sum of the terms (the series, term by term; beam-series). */
+const FLUENCE = (() => {
+  const F = new Float64Array(GRID_SIZE);
+  for (const g of FLUENCE_N) for (let i = 0; i < GRID_SIZE; i++) F[i]! += g[i]!;
+  return F;
+})();
+export { BOUNCES };
 /** Light leaving a diffuse bin (Lambertian, 2D: reflectance × irradiance / 2). */
 export const outgoing = (s: Seg, out: Float64Array) => {
   const b = s.bin * NS;
   for (let i = 0; i < NS; i++) out[i] = (s.albedo![i]! * E[b + i]!) / 2;
 };
 
-// --- T(L): the room acting once on its own light ------------------------------------
-/**
- * The fluence of T(L), computed by its own trace rather than as L minus E: every
- * surface sends on, once, what L delivers to it, and the light is carried to
- * the next surface and stops there. The diffuse walls re-emit from their
- * irradiance (reflectance times what arrives, cosine-distributed, sampled
- * afresh, TPHOTONS in all, by power); the mirrors reflect what arrives at
- * them (the photons of the main trace as they left each mirror). If L is the
- * equilibrium, the result is L - E, up to Monte Carlo noise: a result, not an
- * identity of this code. Computed on first use.
- */
-let FLUENCE_T: Float64Array | null = null;
-const TPHOTONS = 60000;
-function traceT(): Float64Array {
-  const F = new Float64Array(GW * GH * 3);
-  let sd = 0x7654321;
-  const r = () => {
-    sd ^= sd << 13;
-    sd ^= sd >>> 17;
-    sd ^= sd << 5;
-    return (sd >>> 0) / 4294967296;
-  };
-  // The diffuse walls: each bin's outgoing power, reflectance times what arrives.
-  const power: { s: Seg; xyz: [number, number, number] }[] = [];
-  const w = new Float64Array(NS);
-  let total = 0;
-  for (const s of segs) {
-    if (s.bin < 0) continue;
-    const b = s.bin * NS;
-    for (let i = 0; i < NS; i++) w[i] = s.albedo![i]! * E[b + i]! * binLength[s.bin]!;
-    const xyz = toXYZw(w);
-    power.push({ s, xyz });
-    total += xyz[1];
-  }
-  for (const { s, xyz } of power) {
-    const x = (TPHOTONS * xyz[1]) / total; // expected photons from this bin
-    const n = Math.floor(x) + (r() < x - Math.floor(x) ? 1 : 0);
-    const each: [number, number, number] = [xyz[0] / x, xyz[1] / x, xyz[2] / x];
-    for (let k = 0; k < n; k++) {
-      const p = add(s.a, sub(s.b, s.a), r());
-      const st = 2 * r() - 1;
-      const d = unit(add(add(v(0, 0), s.n, Math.sqrt(1 - st * st)), perp(s.n), st));
-      const h = hit(p, d, s);
-      if (h) track(p, h.p, each, F);
-    }
-  }
-  // The mirrors: what arrives, reflected.
-  for (const { p, d, s, xyz } of MIRROR_OUT) {
-    const h = hit(p, d, s);
-    if (h) track(p, h.p, xyz, F);
-  }
-  return F;
-}
 /** The room's light as fluence (XYZ per cell): L, the lamp's alone E, or T(L). */
 export function fluenceOf(which: 'L' | 'E' | 'T'): Float64Array {
   if (which === 'L') return FLUENCE;
   if (which === 'E') return FLUENCE_E;
-  return (FLUENCE_T ??= traceT());
+  return traced.FLUENCE_T;
 }
 
 /** T^n E as fluence, n < BOUNCES; n = BOUNCES is the rest of the series, every term from there on. */
@@ -233,7 +118,7 @@ export function sampleBounces(count: number, rng: () => number, into: Float64Arr
     for (let bounce = 0; bounce < into.length; bounce++) {
       const h = hit(o, d, skip);
       if (!h) break;
-      track(o, h.p, toXYZw(w), into[bounce] as typeof FLUENCE);
+      track(o, h.p, toXYZw(w), into[bounce]!);
       if (h.s.kind === 'black') break;
       if (h.s.kind === 'mirror') {
         for (let i = 0; i < NS; i++) w[i]! *= MIRROR_R;
@@ -252,10 +137,10 @@ export function sampleBounces(count: number, rng: () => number, into: Float64Arr
     }
   }
 }
-export const GRID_SIZE = GW * GH * 3;
+export { GRID_SIZE };
 /** Add a stretch of flight from a to b, carrying xyz, into a fluence grid (any grid of GRID_SIZE). */
 export function trackInto(a: Vec, b: Vec, xyz: [number, number, number], grid: Float64Array): void {
-  track(a, b, xyz, grid as typeof FLUENCE);
+  track(a, b, xyz, grid);
 }
 
 /** The power of T^n E (n = BOUNCES: of the rest of the series), the norm the slides use. */

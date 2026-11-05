@@ -6,7 +6,7 @@
   "scripts": {
     "build:all": "node scripts/build-all.mjs",
     "dev": "vite",
-    "build": "vite build",
+    "build": "node scripts/bake-beamroom.mjs && vite build",
     "preview": "vite preview",
     "video": "node scripts/encode.mjs"
   },

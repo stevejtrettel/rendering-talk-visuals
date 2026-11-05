@@ -12,3 +12,6 @@ out/
 dist-pages
 demos/*/index.html
 demos/__pages
+
+# Baked by scripts/bake-beamroom.mjs on every build
+public/beamroom.bin
