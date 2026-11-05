@@ -17,6 +17,15 @@
  *           lit. It steps through a matte wall (light from everywhere it can
  *           see: many entries), a mirror (light from one direction: an entry or
  *           two) and the ceiling.
+ *   system  the linear system L = E + T L as pictures (Steve, 2026-11-04: "show
+ *           the linear system E + T(L), by showing T maybe"): a column for L,
+ *           =, a column for E, +, the matrix T, a column for L, each with its
+ *           4,104 entries (the R block, then G, then B; brightness the value,
+ *           each block in its colour), T the actual pattern of its nonzero
+ *           entries, 4,104 x 4,104: three blocks on the diagonal (the colours
+ *           never mix) and zeros everywhere else. L is the solution for the
+ *           `ray` source, so the picture is an equation that holds. Symbol
+ *           labels are the deck's.
  *   matrix  T (its green channel; the others have the same zeros) as numbers,
  *           a window of it running past, mostly zeros; beside it the whole
  *           matrix, a dot per nonzero entry, and the window's place in it.
@@ -44,7 +53,7 @@ const HALF_W = (ORTHO_H * 16) / 9;
 const stage = createStage({ camera: 'ortho', position: [0, 0, 10], target: [0, 0, 0], orthoHeight: ORTHO_H, lights: false, controls: false });
 const ui = createUI(stage);
 const q = new URLSearchParams(location.search);
-const SHOW = (q.get('show') ?? 'solve') as 'pieces' | 'row' | 'matrix' | 'solve';
+const SHOW = (q.get('show') ?? 'solve') as 'pieces' | 'row' | 'system' | 'matrix' | 'solve';
 const BARE = q.has('bare');
 const T = buildT();
 const P3 = (p: Vec, z = 0): [number, number, number] => [p.x, p.y, z];
@@ -159,6 +168,96 @@ if (SHOW === 'pieces') {
       choose(best);
     }
   });
+}
+
+if (SHOW === 'system') {
+  stage.duration = 1;
+  const NN = 3 * N; // the whole light field: R block, G block, B block
+  const PX = 456; // drawn rows (each about 9 entries)
+  const H = 4.4;
+  const CY = -0.05;
+  const TINT: RGB[] = [[0.85, 0.36, 0.28], [0.45, 0.72, 0.38], [0.42, 0.62, 0.86]];
+  const E = sourceE('ray');
+  const L = [0, 1, 2].map((c) => solve(T, c, E[c]!));
+  const nz = (F: Float64Array[]) => {
+    const all: number[] = [];
+    for (const f of F) for (const x of f) if (x > 0) all.push(x);
+    return all.sort((a, b) => a - b);
+  };
+  const lv = nz(L);
+  const q = lv[Math.floor(lv.length * 0.7)]! || 1;
+  /** A column of the 4,104 entries, drawn PX tall: each drawn row the mean of its entries (`max` for E, so its few entries show). */
+  function column(F: Float64Array[], useMax: boolean): THREE.DataTexture {
+    const data = new Uint8Array(PX * 4);
+    for (let r = 0; r < PX; r++) {
+      const i0 = Math.floor((r * NN) / PX);
+      const i1 = Math.floor(((r + 1) * NN) / PX);
+      let acc = 0;
+      let c = 0;
+      for (let i = i0; i < i1; i++) {
+        c = Math.floor(i / N);
+        const x = F[c]![i - c * N]!;
+        acc = useMax ? Math.max(acc, x) : acc + x / (i1 - i0);
+      }
+      const b = 1 - Math.exp(-acc / q);
+      const o = (PX - 1 - r) * 4; // entry 0 at the top
+      const col = new THREE.Color().setRGB(...(TINT[c]!.map((t) => Math.min(1, t * b * 1.15)) as RGB), THREE.LinearSRGBColorSpace);
+      data[o] = Math.round(255 * col.r);
+      data[o + 1] = Math.round(255 * col.g);
+      data[o + 2] = Math.round(255 * col.b);
+      data[o + 3] = 255;
+    }
+    const tex = new THREE.DataTexture(data, 1, PX, THREE.RGBAFormat);
+    tex.needsUpdate = true;
+    return tex;
+  }
+  const W = 0.34;
+  const frame = (x0: number, x1: number) => {
+    const y0 = CY - H / 2;
+    const y1 = CY + H / 2;
+    stage.add(polyline([[x0, y0, 0.01], [x1, y0, 0.01], [x1, y1, 0.01], [x0, y1, 0.01], [x0, y0, 0.01]], { color: C.slate, width: 1.5 }));
+  };
+  const columnAt = (x: number, tex: THREE.DataTexture) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshBasicMaterial({ map: tex }));
+    m.position.set(x, CY, 0);
+    stage.add(m);
+    frame(x - W / 2, x + W / 2);
+  };
+  const X = { L1: -4.5, eq: -3.92, E: -3.34, plus: -2.76, T0: -2.2, L2: 2.62 };
+  columnAt(X.L1, column(L, false));
+  columnAt(X.E, column(E, false));
+  // E's nonzero entries (the source, one in each colour) are 3 of 4,104: too thin to see, so each is marked.
+  for (let c = 0; c < 3; c++)
+    for (let i = 0; i < N; i++) {
+      if (!(E[c]![i]! > 0)) continue;
+      const y = CY + H / 2 - ((c * N + i + 0.5) / NN) * H;
+      const mk = new THREE.Mesh(new THREE.PlaneGeometry(W, 0.07), flat(new THREE.Color().setRGB(...TINT[c]!, THREE.LinearSRGBColorSpace).getHex()));
+      mk.position.set(X.E, y, 0.02);
+      stage.add(mk);
+    }
+  columnAt(X.L2, column(L, false));
+  for (const [sym, x] of [['=', X.eq], ['+', X.plus]] as const) stage.add(label(sym, { size: 0.45, color: C.bone, anchorX: 'center', anchorY: 'middle', position: [x, CY, 0] }));
+  // T: a dot where any of the entries a drawn pixel covers is nonzero, in its block's colour.
+  const S = PX;
+  const data = new Uint8Array(S * S * 4);
+  for (let i = 0; i < S * S; i++) data[i * 4 + 3] = 255;
+  for (let c = 0; c < 3; c++)
+    for (let r = 0; r < N; r++)
+      for (const col of T.cols[r]!) {
+        const R = c * N + r;
+        const Cc = c * N + col;
+        const o = ((S - 1 - Math.floor((R * S) / NN)) * S + Math.floor((Cc * S) / NN)) * 4;
+        data[o] = Math.round(255 * TINT[c]![0]! * 0.9);
+        data[o + 1] = Math.round(255 * TINT[c]![1]! * 0.9);
+        data[o + 2] = Math.round(255 * TINT[c]![2]! * 0.9);
+      }
+  const ttex = new THREE.DataTexture(data, S, S, THREE.RGBAFormat);
+  ttex.colorSpace = THREE.SRGBColorSpace;
+  ttex.needsUpdate = true;
+  const tm = new THREE.Mesh(new THREE.PlaneGeometry(H, H), new THREE.MeshBasicMaterial({ map: ttex }));
+  tm.position.set(X.T0 + H / 2, CY, 0);
+  stage.add(tm);
+  frame(X.T0, X.T0 + H);
 }
 
 if (SHOW === 'row') {
