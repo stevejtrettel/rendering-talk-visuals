@@ -51,7 +51,12 @@
  *           and the walls squash onto the horizon, leaving a thin coloured line
  *           (Steve: "we wouldn't see the floor in the end, and would just see
  *           the line of pixels essentially"), and the pinhole camera's 16
- *           pixels grow out of it, each on its own stretch. The view's field of view is the camera's
+ *           pixels grow out of it, each on its own stretch. Along the bottom the
+ *           whole time, the image of slide 58 (Steve: "the original pixel image
+ *           running across the bottom of the screen the whole time"): the lens
+ *           camera's, as are the pixels that grow (so they match it; a lens
+ *           pixel averages its 6 rays, which differs from the line's middle
+ *           where a column straddles two colours). The view's field of view is the camera's
  *           (90 degrees across: sensor 1.6 wide at depth 0.8), so pixel j's
  *           ray is the middle of column j exactly. A pinhole, not slide 58's
  *           lens, so the match is exact.
@@ -707,7 +712,22 @@ if (SHOW === 'view') {
     const k = sectorOf(p, v(-d.x, -d.y));
     return k < 0 ? [0, 0, 0] : ([0, 1, 2].map((c) => L[c]![index(p, k)]!) as RGB);
   };
-  const pixels = Array.from({ length: NPIX }, (_, j) => seen(PIN, rayOf(j)));
+  // Slide 58's lens camera (the camera block's: 6 rays through a lens 0.3 wide, meeting 4.5 ahead): its image.
+  const fwdA = v(Math.cos(AIM), Math.sin(AIM));
+  const acrossA = v(-Math.sin(AIM), Math.cos(AIM));
+  const pixels = Array.from({ length: NPIX }, (_, j): RGB => {
+    const w = rayOf(j);
+    const Q = add(PIN, w, 4.5 / (w.x * fwdA.x + w.y * fwdA.y));
+    const sum: RGB = [0, 0, 0];
+    for (let k = 0; k < 6; k++) {
+      const a = add(PIN, acrossA, -0.15 + ((k + 0.5) * 0.3) / 6);
+      const d0 = sub(Q, a);
+      const dl = Math.hypot(d0.x, d0.y);
+      const c = seen(a, v(d0.x / dl, d0.y / dl));
+      for (let i = 0; i < 3; i++) sum[i]! += c[i]! / 6;
+    }
+    return sum;
+  });
   const ys = pixels.map((c) => lumOf(...c)).filter((y) => y > 0).sort((a, b) => a - b);
   const expose = ys[Math.floor(ys.length * 0.9)]! * 1.2 || 1;
   const toned = (rgb: RGB): RGB => {
@@ -841,8 +861,17 @@ if (SHOW === 'view') {
   const halfW = HUD_D * Math.tan(Math.PI / 4);
   const halfH = halfW / (16 / 9);
   const tileW = (2 * halfW) / NPIX;
+  // The image of slide 58, along the bottom from the start.
+  const strip = Array.from({ length: NPIX }, (_, j) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(tileW * 0.86, tileW * 0.86), new THREE.MeshBasicMaterial({ color: colourOf(pixels[j]!), depthTest: false, depthWrite: false, transparent: true }));
+    m.position.set(-halfW + (j + 0.5) * tileW, -halfH + tileW * 0.62, -HUD_D); // drawn last, over everything (the floor passes close to the camera)
+    m.renderOrder = 10;
+    hud.add(m);
+    return m;
+  });
+  void strip;
   const tiles = Array.from({ length: NPIX }, (_, j) => {
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(tileW * 0.86, tileW * 0.86), new THREE.MeshBasicMaterial({ color: colourOf(pixels[j]!), transparent: true, depthTest: false }));
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(tileW * 0.86, tileW * 0.86), new THREE.MeshBasicMaterial({ color: colourOf(pixels[j]!), transparent: true, depthTest: false, depthWrite: false }));
     m.position.set(-halfW + (j + 0.5) * tileW, 0, -HUD_D); // on the horizon
     m.renderOrder = 10;
     hud.add(m);
@@ -876,6 +905,9 @@ if (SHOW === 'view') {
     cam.quaternion.slerpQuaternions(Q0, Q1, ease(Math.max(0, ((t - T0) / (T1 - T0) - 0.15) / 0.85)));
     cam.fov = 20 + (END_VFOV - 20) * u;
     cam.updateProjectionMatrix();
+    // Keep the HUD the same on screen while the field of view changes: scale it with tan(half the view across).
+    const k = Math.tan(Math.atan(Math.tan(((cam.fov * Math.PI) / 180) / 2) * (16 / 9)));
+    hud.scale.set(k, k, 1);
     // The walls rise from the floor to H; then, at eye level, squash onto the horizon.
     const rise = H * ease((t - T0) / ((T1 - T0) * 0.6));
     const sq = ease((t - T1 - HOLD3D) / (T2 - T1 - HOLD3D));
