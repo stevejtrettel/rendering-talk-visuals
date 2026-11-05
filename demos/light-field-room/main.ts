@@ -40,12 +40,19 @@
  * which lets the dim bounced light show beside the far brighter beam.
  * Colours through the CIE observer
  * (response.ts), clamped past 670 nm where its analytic tails fail.
+ *
+ * `?rgb`: the light stored as three numbers (Steve, 2026-11-04: the "so we
+ * cheat" slide, the room again, "but now our pointer doesn't show a spectrum
+ * but shows an RGB bar graph, and the pixel colour"). The graph is replaced
+ * by three bars, R, G and B, the probed spectrum's linear sRGB (through the
+ * same CIE observer, at the swatch's exposure), and a large swatch, the
+ * colour a pixel shows for it.
  */
 
 import * as THREE from 'three';
 import { createStage, createUI, C, flat } from '@';
 import { polyline, setPolyline } from '@/lines';
-import { label } from '@/text';
+import { label, setText } from '@/text';
 import { CMF, xyzToHex } from '@/response';
 import { type Vec, v, add, fromAngle, WL0, WL1, NS, nmAt, spectrum, nmColour, toXYZ, ROOM_HALF, L_REF, lightAlong, drawRoom } from '@/beamroom';
 
@@ -97,13 +104,17 @@ room.add(backRay, footShaft, footHead, footDot);
 
 
 // --- The graph ---------------------------------------------------------------------
+const RGB_MODE = new URLSearchParams(location.search).has('rgb');
+const graph = new THREE.Group();
+graph.visible = !RGB_MODE;
+stage.add(graph);
 const G = { x0: 2.0, x1: 5.05, y0: -1.05, y1: 1.35 };
 const gx = (nm: number) => G.x0 + ((nm - WL0) / (WL1 - WL0)) * (G.x1 - G.x0);
 const gy = (h: number) => G.y0 + Math.min(h, 1) * (G.y1 - G.y0);
-stage.add(polyline([[G.x0, G.y0, 0], [G.x1, G.y0, 0]], { color: C.slateDeep, width: 2 }));
+graph.add(polyline([[G.x0, G.y0, 0], [G.x1, G.y0, 0]], { color: C.slateDeep, width: 2 }));
 for (const nm of [400, 500, 600, 700]) {
-  stage.add(polyline([[gx(nm), G.y0 - 0.08, 0], [gx(nm), G.y0, 0]], { color: C.slateDeep, width: 2 }));
-  stage.add(label(String(nm), { size: 0.15, color: C.slate, anchorX: 'center', anchorY: 'top', position: [gx(nm), G.y0 - 0.28, 0] }));
+  graph.add(polyline([[gx(nm), G.y0 - 0.08, 0], [gx(nm), G.y0, 0]], { color: C.slateDeep, width: 2 }));
+  graph.add(label(String(nm), { size: 0.15, color: C.slate, anchorX: 'center', anchorY: 'top', position: [gx(nm), G.y0 - 0.28, 0] }));
 }
 for (let i = 0; i < 120; i++) {
   const nm = WL0 + ((WL1 - WL0) * (i + 0.5)) / 120;
@@ -113,9 +124,9 @@ for (let i = 0; i < 120; i++) {
     flat(nmColour(nm), { transparent: true, opacity: Math.min(1, (xyz[0]! + xyz[1]! + xyz[2]!) * 1.6) }),
   );
   strip.position.set(gx(nm), G.y0 - 0.14, 0);
-  stage.add(strip);
+  graph.add(strip);
 }
-stage.add(label('Spectrum', { size: 0.18, color: C.ash, anchorX: 'center', anchorY: 'top', position: [(G.x0 + G.x1) / 2, G.y0 - 0.52, 0] }));
+graph.add(label('Spectrum', { size: 0.18, color: C.ash, anchorX: 'center', anchorY: 'top', position: [(G.x0 + G.x1) / 2, G.y0 - 0.52, 0] }));
 const curve = polyline(Array.from({ length: NS }, () => [0, 0, 0] as [number, number, number]), { color: C.bone, width: 4 });
 const fillGeom = new THREE.BufferGeometry();
 fillGeom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(NS * 6), 3));
@@ -125,7 +136,31 @@ fillMesh.position.z = -0.01;
 const swatch = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.42), flat(0x000000));
 swatch.position.set(G.x1 - 0.21, G.y1 + 0.42, 0);
 const offScale = label('off the top', { size: 0.15, color: C.ash, anchorX: 'left', anchorY: 'bottom', position: [G.x0, G.y1 + 0.08, 0] });
-stage.add(curve, fillMesh, swatch, offScale);
+graph.add(curve, fillMesh, offScale);
+stage.add(swatch);
+
+// `?rgb`: three bars and the pixel's colour in place of the graph.
+const RGBW = { x0: 1.95, w: 0.48, gap: 0.2 };
+const RGB_COLORS = [0xd9654b, 0x7cb565, 0x6d9fd4];
+const rgbBars = RGB_COLORS.map((color, c) => {
+  const x = RGBW.x0 + c * (RGBW.w + RGBW.gap) + RGBW.w / 2;
+  const bar = new THREE.Mesh(new THREE.PlaneGeometry(RGBW.w, 1), flat(color));
+  const value = label('', { size: 0.15, color: C.bone, anchorX: 'center', anchorY: 'bottom', position: [x, 0, 0] });
+  const name = label('RGB'[c]!, { size: 0.2, color, anchorX: 'center', anchorY: 'top', position: [x, G.y0 - 0.1, 0] });
+  return { bar, value, name, x };
+});
+const rgbGroup = new THREE.Group();
+rgbGroup.visible = RGB_MODE;
+rgbGroup.add(polyline([[RGBW.x0 - 0.15, G.y0, 0], [RGBW.x0 + 3 * RGBW.w + 2 * RGBW.gap + 0.15, G.y0, 0]], { color: C.slateDeep, width: 2 }));
+for (const b of rgbBars) rgbGroup.add(b.bar, b.value, b.name);
+rgbGroup.add(label('pixel colour', { size: 0.17, color: C.ash, anchorX: 'center', anchorY: 'top', position: [4.6, G.y0 - 0.1, 0] }));
+stage.add(rgbGroup);
+if (RGB_MODE) {
+  swatch.scale.setScalar(2.2);
+  swatch.position.set(4.6, G.y0 + 0.47, 0);
+}
+/** Linear sRGB from XYZ. */
+const linRGB = (X: number, Y: number, Z: number) => [3.2406 * X - 1.5372 * Y - 0.4986 * Z, -0.9689 * X + 1.8758 * Y + 0.0415 * Z, 0.0557 * X - 0.204 * Y + 1.057 * Z];
 
 // --- Update -----------------------------------------------------------------------
 const L = new Float64Array(NS);
@@ -171,6 +206,17 @@ function update(): void {
   const [X, Y, Z] = toXYZ(L);
   const Yref = toXYZ(spectrum(() => L_REF))[1];
   (swatch.material as THREE.MeshBasicMaterial).color.setHex(xyzToHex((X / Yref) * 1.6, (Y / Yref) * 1.6, (Z / Yref) * 1.6));
+  if (RGB_MODE) {
+    const rgb = linRGB((X / Yref) * 1.6, (Y / Yref) * 1.6, (Z / Yref) * 1.6);
+    rgbBars.forEach((b, c) => {
+      const val = Math.max(0, rgb[c]!);
+      const h = Math.max(1e-3, Math.min(val, 1) * (G.y1 - G.y0));
+      b.bar.scale.y = h;
+      b.bar.position.set(b.x, G.y0 + h / 2, 0);
+      b.value.position.set(b.x, G.y0 + h + 0.06, 0);
+      setText(b.value, val > 1 ? 'off the top' : val.toFixed(2));
+    });
+  }
 }
 ui.params.add(params, 'direction', 0, 360, 1).onChange(update);
 update();
