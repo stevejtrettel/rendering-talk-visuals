@@ -88,13 +88,20 @@ import { CAM_POS, CAM_TARGET, Z, floorPlate, glassSurface, surfaceRim } from '@/
 import { FIELD_HALF } from '@/functions';
 
 const q = new URLSearchParams(location.search);
-const N = Math.max(0, Math.min(2, Number(q.get('n') ?? 0)));
+const N = q.get('space') === '3' ? 1 : Math.max(0, Math.min(2, Number(q.get('n') ?? 0)));
 const WALK = q.has('walk');
 const SPACE = q.has('space');
 const SPACE_N = Number(q.get('space') || 0);
+// ?space=3: where the plate sits beside the box, its tilt toward the viewer, its yaw, its size.
+const PAIR_AT: [number, number, number] = [5.5, 1.1, 1.2];
+const PAIR_TILT = 0.72;
+const PAIR_YAW = -0.42;
+const PAIR_SCALE = 0.62;
 const FOCUS = Number(q.get('focus') ?? 0.4); // ?space=2: where pixel i is focused, as a fraction of the way from a to the cartoon's x_1
 
-const stage = SPACE && SPACE_N === 2
+const stage = SPACE && SPACE_N === 3
+  ? createStage({ camera: 'persp', position: [1.7, 3.3, 19.5], target: [1.8, 1.8, 1.5], fov: 34, lights: false, controls: false })
+  : SPACE && SPACE_N === 2
   ? createStage({ camera: 'persp', position: CAM_POS, target: CAM_TARGET, fov: 38, lights: false, controls: false })
   : SPACE && SPACE_N === 0
   ? createStage({ camera: 'persp', position: [0.9, 3.1, 17.5], target: [1.0, 2.3, 1.5], fov: 35, lights: false, controls: false })
@@ -289,6 +296,7 @@ function rng32(seed: number) {
 }
 
 if (WALK) walkMode();
+else if (SPACE && SPACE_N === 3) pairMode();
 else if (SPACE && SPACE_N === 2) sliceMode();
 else if (SPACE && SPACE_N === 1) netMode();
 else if (SPACE) spaceMode();
@@ -684,6 +692,28 @@ function sliceMode() {
   for (const o of roomParts) o.visible = false;
   lamp.visible = white.visible = blue.visible = cam.visible = false;
   for (const o of scene.children) if ((o as { userData: { label?: boolean } }).userData.label) o.visible = false;
+  const holder = new THREE.Group();
+  scene.add(holder);
+  slice(holder, 0.5);
+  stage.duration = 10;
+}
+
+// --- The box with the cartoon's path, and its space of paths right beside it -----------
+function pairMode() {
+  fixedPath();
+  const holder = new THREE.Group();
+  holder.position.set(PAIR_AT[0], PAIR_AT[1], PAIR_AT[2]);
+  holder.rotation.set(PAIR_TILT, PAIR_YAW, 0, 'YXZ');
+  holder.scale.setScalar(PAIR_SCALE);
+  scene.add(holder);
+  slice(holder, 0.32);
+  stage.duration = 10;
+}
+
+/** The slice of A x S^2 with the integrand over it, built into `holder` (plate coordinates). */
+function slice(holder: THREE.Group, labelSize: number) {
+  holder.updateMatrixWorld(true);
+  const W = (v: THREE.Vector3) => holder.localToWorld(v.clone());
 
   // A x S^2 is four-dimensional; the region drawn is a true two-dimensional
   // slice of it: one line across the lens (through the cartoon's lens point a,
@@ -727,22 +757,21 @@ function sliceMode() {
   for (let i = 0; i <= 80; i++) for (let j = 0; j <= 80; j++) max = Math.max(max, integrand(toS(-3 + (6 * i) / 80), toAlpha(-3 + (6 * j) / 80)));
   const K = 1.25 / (Z * Math.max(max, 1e-9));
   const f = (x: number, z: number) => K * integrand(toS(x), toAlpha(z));
-  scene.add(floorPlate(12));
-  scene.add(glassSurface(f, { res: 220, wire: 44 }));
-  scene.add(surfaceRim(f));
+  holder.add(floorPlate(12));
+  holder.add(glassSurface(f, { res: 220, wire: 44 }));
+  holder.add(surfaceRim(f));
   // The axes: A across, S^2 in depth.
-  name('A', '', new THREE.Vector3(0, 0, FIELD_HALF + 0.55), 0, 0, 0x8fb5d6, 0.5);
-  name('S²', '', new THREE.Vector3(FIELD_HALF + 0.65, 0, 0), 0, 0, 0x8fb5d6, 0.5);
+  name('A', '', W(new THREE.Vector3(0, 0, FIELD_HALF + 0.55)), 0, 0, 0x8fb5d6, labelSize);
+  name('S²', '', W(new THREE.Vector3(FIELD_HALF + 0.65, 0, 0)), 0, 0, 0x8fb5d6, labelSize);
   // The cartoon's path: a is 0.2 to the right of the lens centre, u_1 points at X2.
   const u1 = X2.clone().sub(X1).normalize();
   const alpha1 = Math.atan2(u1.dot(TDIR), u1.y);
   const px = (0.2 / (HALF * 0.98)) * FIELD_HALF;
   const pz = (alpha1 / ((Math.PI / 2) * 0.995)) * FIELD_HALF;
   const top = new THREE.Vector3(px, f(px, pz) * Z, pz);
-  scene.add(polyline([new THREE.Vector3(px, 0.01, pz), top], { color: C.ochre, width: 3 }));
-  dot(new THREE.Vector3(px, 0.01, pz), C.ochre, 0.08);
-  dot(top, C.ochre, 0.08);
-  stage.duration = 10;
+  holder.add(polyline([new THREE.Vector3(px, 0.01, pz), top], { color: C.ochre, width: 3 }));
+  dot(W(new THREE.Vector3(px, 0.01, pz)), C.ochre, 0.08 * holder.scale.x);
+  dot(W(top), C.ochre, 0.08 * holder.scale.x);
 }
 
 // --- Random walks ----------------------------------------------------------------
