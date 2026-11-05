@@ -724,9 +724,11 @@ if (SHOW === 'camera' || SHOW === 'cmatrix') {
 
   // --- Layout --------------------------------------------------------------------------
   const G = CMAT ? { x0: -4.9, x1: 4.9 } : { x0: -5.0, x1: 0.75 }; // C's columns
-  const CM = CMAT ? { y1: 1.75, y0: -1.75 } : { y1: 0.8, y0: -0.8 }; // C's rows, top to bottom
+  const CM = CMAT ? { y1: 1.75, y0: -1.75 } : { y1: 1.6, y0: -1.6 }; // C's rows, top to bottom
   const LCOL = { x: 1.3, w: 0.3, y1: 2.45, y0: -2.45 }; // L, a tall column beside C
-  const PCOL = { x: 2.85, w: 0.75 }; // C L, drawn as the image itself: its pixels in their colours, as tall as C
+  const IMG = { y1: 2.1, y0: -2.1 }; // the image: taller than C, shorter than L (Steve)
+  const TILE = (IMG.y1 - IMG.y0) / CAM_PIX; // one pixel of the image, square
+  const PCOL = { x: 2.6, w: TILE }; // C L, drawn as the image itself: square pixels in their colours, as tall as C
   const yOfL = (i: number) => LCOL.y1 - ((i + 0.5) / NN) * (LCOL.y1 - LCOL.y0);
   const xOfCol = (i: number) => G.x0 + ((i + 0.5) / NN) * (G.x1 - G.x0);
   const yOfRow = (r: number) => CM.y1 - ((r + 0.5) / ROWS) * (CM.y1 - CM.y0);
@@ -783,17 +785,15 @@ if (SHOW === 'camera' || SHOW === 'cmatrix') {
   }
   // = C L, drawn as what it is: the image, each pixel's three numbers as its colour (Steve: "just draw CL as the
   // correctly coloured nice pixel image").
-  const yOfPix = (j: number) => CM.y1 - ((j + 0.5) / CAM_PIX) * (CM.y1 - CM.y0);
+  const yOfPix = (j: number) => IMG.y1 - ((j + 0.5) / CAM_PIX) * (IMG.y1 - IMG.y0);
   {
     groups[2]!.add(label('=', { size: 0.4, color: C.bone, anchorX: 'center', anchorY: 'middle', position: [(LCOL.x + LCOL.w / 2 + PCOL.x - PCOL.w / 2) / 2, (CM.y0 + CM.y1) / 2, 0] }));
-    const data = new Uint8Array(CAM_PIX * 4);
-    for (let j = 0; j < CAM_PIX; j++) put(data, (CAM_PIX - 1 - j) * 4, new THREE.Color().setRGB(...toned(pixel(j)), THREE.LinearSRGBColorSpace).getHex());
-    const t = tex(data, 1, CAM_PIX);
-    t.magFilter = THREE.NearestFilter;
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(PCOL.w, CM.y1 - CM.y0), new THREE.MeshBasicMaterial({ map: t }));
-    m.position.set(PCOL.x, (CM.y0 + CM.y1) / 2, 0);
-    groups[2]!.add(m);
-    frame(groups[2]!, PCOL.x - PCOL.w / 2, CM.y0, PCOL.x + PCOL.w / 2, CM.y1);
+    // Square tiles with a hairline between them, so it reads as pixels.
+    for (let j = 0; j < CAM_PIX; j++) {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(TILE * 0.84, TILE * 0.84), flat(new THREE.Color().setRGB(...toned(pixel(j)), THREE.LinearSRGBColorSpace).getHex()));
+      m.position.set(PCOL.x, yOfPix(j), 0);
+      groups[2]!.add(m);
+    }
   }
   // --- Building with the deck: on arrival L and C; then = the image. Alone: C only (cmatrix). ---
   const setShown = (n: number) => groups.forEach((g, k) => (g.visible = CMAT ? k === 1 : k <= n + 1));
@@ -837,7 +837,7 @@ if (SHOW === 'camera' || SHOW === 'cmatrix') {
         mk.position.set(LCOL.x, yl, 0.04);
         ups.add(mk);
       }
-      setPolyline(acrossLine, [[PCOL.x - PCOL.w / 2, yOfPix(j) + 0.5 * ((CM.y1 - CM.y0) / CAM_PIX), 0.05], [PCOL.x + PCOL.w / 2, yOfPix(j) + 0.5 * ((CM.y1 - CM.y0) / CAM_PIX), 0.05], [PCOL.x + PCOL.w / 2, yOfPix(j) - 0.5 * ((CM.y1 - CM.y0) / CAM_PIX), 0.05], [PCOL.x - PCOL.w / 2, yOfPix(j) - 0.5 * ((CM.y1 - CM.y0) / CAM_PIX), 0.05], [PCOL.x - PCOL.w / 2, yOfPix(j) + 0.5 * ((CM.y1 - CM.y0) / CAM_PIX), 0.05]]); // the pixel, outlined
+      setPolyline(acrossLine, [[PCOL.x - PCOL.w / 2, yOfPix(j) + 0.5 * TILE, 0.05], [PCOL.x + PCOL.w / 2, yOfPix(j) + 0.5 * TILE, 0.05], [PCOL.x + PCOL.w / 2, yOfPix(j) - 0.5 * TILE, 0.05], [PCOL.x - PCOL.w / 2, yOfPix(j) - 0.5 * TILE, 0.05], [PCOL.x - PCOL.w / 2, yOfPix(j) + 0.5 * TILE, 0.05]]); // the pixel, outlined
       rowBand.visible = ups.visible = info.visible = true;
       acrossLine.visible = groups[2]!.visible;
       info.position.set(G.x0 + 0.05, CM.y1 + 0.12, 0.3);
