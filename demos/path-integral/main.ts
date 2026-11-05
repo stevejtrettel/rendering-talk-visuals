@@ -37,6 +37,22 @@
  * it walks, ochre if it reaches the light (rendering-visualizer pixel-bounce's
  * colours). The walks are seeded, so the sequence is the same every time; the
  * seed is the first whose first three walks include one that reaches the lamp.
+ *
+ * ?space (Steve, 2026-11-05: "interpret its domain as the space of paths ...
+ * show paths in the scene, then we lay a bunch of them out in the plane, and
+ * draw a graph above them, of the integrand"; "for the lens maybe we do the
+ * literal one"): the space of paths of C E is the lens A itself, each lens point
+ * a one path a -> x_1. Rays from points spread over the lens (ochre if they land
+ * on the lamp), then a copy of the lens disc lifts out of the camera and is laid
+ * out large beside the box, the same points on it, and over it the integrand
+ * E(x_1, -d): a spike of height E over each point whose ray reached the lamp,
+ * then the whole graph, flat-topped over the region of the lens that sees the
+ * lamp and zero elsewhere. That region is exact: the disc clipped by the
+ * preimage of the lamp square under a -> (where a's ray through the focus
+ * lands), a quadrilateral, since the map is projective. Pixel i is focused short
+ * of the ceiling, so its cone of rays straddles a corner of the lamp and only
+ * part of the lens sees the light (in focus, the region would be all of A or
+ * none of it).
  */
 
 import * as THREE from 'three';
@@ -47,8 +63,11 @@ import { label, setText } from '@/text';
 const q = new URLSearchParams(location.search);
 const N = Math.max(0, Math.min(2, Number(q.get('n') ?? 0)));
 const WALK = q.has('walk');
+const SPACE = q.has('space');
 
-const stage = createStage({ camera: 'persp', position: [-0.4, 3.0, 15.5], target: [-1.5, 1.05, 1.5], fov: 31, lights: false, controls: false });
+const stage = SPACE
+  ? createStage({ camera: 'persp', position: [0.9, 3.1, 17.5], target: [1.0, 1.75, 1.5], fov: 34, lights: false, controls: false })
+  : createStage({ camera: 'persp', position: [-0.4, 3.0, 15.5], target: [-1.5, 1.05, 1.5], fov: 31, lights: false, controls: false });
 const scene = stage.scene;
 
 // --- Light: soft, so the room reads; the lamp is the one bright thing. -------
@@ -177,7 +196,60 @@ const mid = (p: THREE.Vector3, r: THREE.Vector3, t: number) => p.clone().lerp(r,
 name('A', '', lensC, -0.25, -0.62, 0x8fb5d6, 0.26);
 name('pixel i', '', pixWorld, -0.2, -0.75, C.ash, 0.2);
 
+// --- The ray caster: the short box, exactly (walls, balls, lamp) ---------------
+type V = THREE.Vector3;
+const BALLS: [V, number][] = [[white.position.clone(), 0.8], [blue.position.clone(), 0.55]];
+const PLANES: { axis: 0 | 1 | 2; at: number }[] = [
+  { axis: 1, at: 0 }, { axis: 1, at: 4 }, { axis: 2, at: -2 }, { axis: 0, at: -2 }, { axis: 0, at: 2 },
+];
+const LO = [-2, 0, -2];
+const HI = [2, 4, 2];
+/** The first thing a ray hits in the short box, or null if it leaves. */
+function cast(o: V, d: V): { p: V; n: V; lamp: boolean } | null {
+  let best = Infinity;
+  let n: V | null = null;
+  let lampHit = false;
+  for (const [c, r] of BALLS) {
+    const oc = o.clone().sub(c);
+    const b = oc.dot(d);
+    const disc = b * b - (oc.dot(oc) - r * r);
+    if (disc <= 0) continue;
+    const t = -b - Math.sqrt(disc);
+    if (t > 1e-5 && t < best) {
+      best = t;
+      n = o.clone().addScaledVector(d, t).sub(c).normalize();
+      lampHit = false;
+    }
+  }
+  for (const { axis, at } of PLANES) {
+    const dd = d.getComponent(axis);
+    if (Math.abs(dd) < 1e-9) continue;
+    const t = (at - o.getComponent(axis)) / dd;
+    if (!(t > 1e-5 && t < best)) continue;
+    const p = o.clone().addScaledVector(d, t);
+    let inside = true;
+    for (let k = 0; k < 3; k++) if (k !== axis && (p.getComponent(k) < LO[k]! - 1e-6 || p.getComponent(k) > HI[k]! + 1e-6)) inside = false;
+    if (!inside) continue;
+    best = t;
+    n = new THREE.Vector3().setComponent(axis, -Math.sign(dd)); // facing the ray
+    lampHit = axis === 1 && at === 4 && Math.abs(p.x) <= 0.6 && Math.abs(p.z) <= 0.6;
+  }
+  if (!n) return null;
+  if (n.dot(d) > 0) n.negate();
+  return { p: o.clone().addScaledVector(d, best), n, lamp: lampHit };
+}
+function rng32(seed: number) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 if (WALK) walkMode();
+else if (SPACE) spaceMode();
 else fixedPath();
 
 // --- One fixed path, labelled ------------------------------------------------------
@@ -211,58 +283,176 @@ function fixedPath() {
   xs.slice(0, -1).forEach((p, i) => name('u', String(i + 1), mid(p, xs[i + 1]!, 0.3), 0.32, 0.05, C.ochre));
 }
 
+// --- The space of paths of C E: the lens, laid out, the integrand over it ------------
+function spaceMode() {
+  // Pixel i's point of focus. Out of focus at the ceiling on purpose: the cone of
+  // pixel i's rays lands on a patch of ceiling that straddles a corner of the lamp,
+  // so only part of the lens sees the light.
+  const CORNER = new THREE.Vector3(-0.42, 4, 0.42); // the cone's centre on the ceiling
+  const F = lensC.clone().lerp(CORNER, 0.72);
+  // Lens coordinates (s, t) along (right, up), and back.
+  const onLens = (s: number, t: number) => lensC.clone().addScaledVector(right, s).addScaledVector(up, t);
+  const lensST = (a: V): [number, number] => [a.clone().sub(lensC).dot(right), a.clone().sub(lensC).dot(up)];
+  /** The lens point whose ray through F lands at X (the line X F, met with the lens plane). */
+  const preimage = (X: V): [number, number] => {
+    const dir = F.clone().sub(X);
+    const lam = lensC.clone().sub(F).dot(axis) / dir.dot(axis);
+    return lensST(F.clone().addScaledVector(dir, lam));
+  };
+
+  // The region of the lens whose rays reach the lamp: the disc, clipped by the
+  // preimage of the lamp square (a quadrilateral: the map is projective).
+  const quad = ([[-0.6, -0.6], [0.6, -0.6], [0.6, 0.6], [-0.6, 0.6]] as const).map(([x, z]) => preimage(new THREE.Vector3(x, 4, z)));
+  let region: [number, number][] = Array.from({ length: 160 }, (_, i) => {
+    const th = (i / 160) * 2 * Math.PI;
+    return [LENS_R * Math.cos(th), LENS_R * Math.sin(th)];
+  });
+  const cx = quad.reduce((m, p) => m + p[0] / 4, 0);
+  const cy = quad.reduce((m, p) => m + p[1] / 4, 0);
+  for (let k = 0; k < 4; k++) {
+    const [ax, ay] = quad[k]!;
+    const [bx, by] = quad[(k + 1) % 4]!;
+    const side = (x: number, y: number) => (bx - ax) * (y - ay) - (by - ay) * (x - ax);
+    const sg = Math.sign(side(cx, cy));
+    const inside = (p: [number, number]) => side(p[0], p[1]) * sg >= 0;
+    const out: [number, number][] = [];
+    region.forEach((P, i) => {
+      const Q = region[(i + 1) % region.length]!;
+      const pi = inside(P);
+      const qi = inside(Q);
+      if (pi) out.push(P);
+      if (pi !== qi) {
+        const sp = side(P[0], P[1]);
+        const sq = side(Q[0], Q[1]);
+        const u = sp / (sp - sq);
+        out.push([P[0] + u * (Q[0] - P[0]), P[1] + u * (Q[1] - P[1])]);
+      }
+    });
+    region = out;
+  }
+
+  // The paths: lens points spread over the disc (a sunflower), each ray through F.
+  const COUNT = 34;
+  const GOLD = Math.PI * (3 - Math.sqrt(5));
+  const order = Array.from({ length: COUNT }, (_, i) => i);
+  const rnd = rng32(7);
+  for (let i = COUNT - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1));
+    [order[i], order[j]] = [order[j]!, order[i]!];
+  }
+  const rays = order.map((i) => {
+    const r = LENS_R * 0.94 * Math.sqrt((i + 0.5) / COUNT);
+    const th = i * GOLD;
+    const st: [number, number] = [r * Math.cos(th), r * Math.sin(th)];
+    const a = onLens(...st);
+    const h = cast(a, F.clone().sub(a).normalize());
+    const end = h ? h.p : a.clone().addScaledVector(F.clone().sub(a).normalize(), 12);
+    return { st, a, end, lamp: !!h?.lamp };
+  });
+  console.log('rays reaching the lamp:', rays.filter((r) => r.lamp).length, 'of', COUNT);
+
+  // The lens laid out: where the copy of the disc lands, flat, and how big.
+  const LAND = new THREE.Vector3(4.5, 0.15, 2.6);
+  const R_FLAT = 1.75;
+  const S = R_FLAT / LENS_R;
+  const H = 1.25; // the height of E on the lamp, in world units
+  const qStart = cam.quaternion.clone();
+  const qEnd = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2 + 0.6, 0, 0));
+
+  const copy = new THREE.Group(); // lens-local: the disc in xy, height along +z
+  scene.add(copy);
+  const discFill = new THREE.Mesh(new THREE.CircleGeometry(LENS_R, 96), flat(0x8fb5d6, { transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false }));
+  copy.add(discFill);
+  copy.add(polyline(Array.from({ length: 97 }, (_, i) => [LENS_R * Math.cos((i / 96) * 2 * Math.PI), LENS_R * Math.sin((i / 96) * 2 * Math.PI), 0] as [number, number, number]), { color: 0x8fb5d6, width: 2.5 }));
+  // The integrand: E on the region, 0 off it. A flat-topped block.
+  const shape = new THREE.Shape(region.map(([x, y]) => new THREE.Vector2(x, y)));
+  const block = new THREE.Mesh(
+    new THREE.ExtrudeGeometry(shape, { depth: H / S, bevelEnabled: false, curveSegments: 1 }),
+    new THREE.MeshStandardMaterial({ color: C.ochre, roughness: 0.6, transparent: true, opacity: 0.0, depthWrite: false }),
+  );
+  copy.add(block);
+  const rim = polyline([...region, region[0]!].map(([x, y]) => [x, y, H / S] as [number, number, number]), { color: 0xffd58a, width: 2.5, opacity: 0 });
+  copy.add(rim);
+
+  // Rays in the scene, and the lens points, and their copies on the laid-out disc.
+  const ends = rays.map((r) => dot(r.end, r.lamp ? 0xfff3e0 : C.ash, 0.035));
+  const rayLines = rays.map((r) => {
+    const l = polyline([r.a, r.end], { color: r.lamp ? C.ochre : C.slate, width: r.lamp ? 2.5 : 1.8, opacity: r.lamp ? 0.85 : 0.5 });
+    scene.add(l);
+    return l;
+  });
+  const lensDots = rays.map((r) => dot(r.a, r.lamp ? C.ochre : C.ash, 0.028));
+  const flatDots = rays.map((r) => dot(r.a, r.lamp ? C.ochre : C.ash, 0.05));
+  const spikes = rays.map((r) => {
+    const l = polyline([r.a, r.a], { color: C.ochre, width: 2.5 });
+    l.visible = r.lamp;
+    scene.add(l);
+    return l;
+  });
+  const tops = rays.map((r) => {
+    const m = dot(r.a, 0xffd58a, 0.05);
+    m.visible = false;
+    return m;
+  });
+  const aLabel = name('A', '', LAND, -R_FLAT - 0.2, 0.15, 0x8fb5d6, 0.32);
+  aLabel.visible = false;
+  scene.add(polyline([pixWorld, lensC], { color: C.ochre, width: 1.5, opacity: 0.4 }));
+
+  // Timeline.
+  const T_RAY = 0.11; // one ray after another
+  const T0 = 0.5;
+  const T1 = T0 + COUNT * T_RAY + 0.8; // the copy leaves the lens
+  const T2 = T1 + 2.2; // and lands, flat
+  const T3 = T2 + 1.4; // the spikes are up
+  const T4 = T3 + 1.2; // the whole graph is in
+  stage.duration = T4 + 4.5;
+  const ease = (x: number) => {
+    const u = Math.min(Math.max(x, 0), 1);
+    return u * u * (3 - 2 * u);
+  };
+  const local = new THREE.Vector3();
+
+  stage.frame((t) => {
+    const u = t % stage.duration;
+    rays.forEach((_, i) => {
+      const on = u >= T0 + i * T_RAY;
+      rayLines[i]!.visible = on;
+      ends[i]!.visible = on;
+      lensDots[i]!.visible = on;
+    });
+    const m = ease((u - T1) / (T2 - T1));
+    copy.visible = u >= T1;
+    copy.position.copy(lensC).lerp(LAND, m);
+    copy.position.y += Math.sin(Math.PI * m) * 1.6; // lift, then set down
+    copy.position.z += Math.sin(Math.PI * m) * 3.2; // in front of the box, not through it
+    copy.quaternion.copy(qStart).slerp(qEnd, m);
+    copy.scale.setScalar(1 + (S - 1) * m);
+    copy.updateMatrixWorld(true);
+    const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(copy.quaternion);
+    const rise = ease((u - T2) / (T3 - T2));
+    rays.forEach((r, i) => {
+      local.set(r.st[0], r.st[1], 0);
+      const base = copy.localToWorld(local.clone());
+      flatDots[i]!.visible = u >= T1;
+      flatDots[i]!.position.copy(base);
+      flatDots[i]!.scale.setScalar(0.55 + 0.45 * m);
+      if (r.lamp) {
+        const topP = base.clone().add(normal.clone().multiplyScalar(H * rise));
+        spikes[i]!.visible = u >= T2;
+        setPolyline(spikes[i]!, [base, topP]);
+        tops[i]!.visible = u >= T2 + 0.05;
+        tops[i]!.position.copy(topP);
+      }
+    });
+    const g = ease((u - T3) / (T4 - T3));
+    (block.material as THREE.MeshStandardMaterial).opacity = 0.55 * g;
+    (rim.material as unknown as { opacity: number }).opacity = g;
+    aLabel.visible = u >= T2;
+  });
+}
+
 // --- Random walks ----------------------------------------------------------------
 function walkMode() {
-  type V = THREE.Vector3;
-  const BALLS: [V, number][] = [[white.position.clone(), 0.8], [blue.position.clone(), 0.55]];
-  const PLANES: { axis: 0 | 1 | 2; at: number }[] = [
-    { axis: 1, at: 0 }, { axis: 1, at: 4 }, { axis: 2, at: -2 }, { axis: 0, at: -2 }, { axis: 0, at: 2 },
-  ];
-  const LO = [-2, 0, -2];
-  const HI = [2, 4, 2];
-  /** The first thing a ray hits in the short box, or null if it leaves. */
-  function cast(o: V, d: V): { p: V; n: V; lamp: boolean } | null {
-    let best = Infinity;
-    let n: V | null = null;
-    let lampHit = false;
-    for (const [c, r] of BALLS) {
-      const oc = o.clone().sub(c);
-      const b = oc.dot(d);
-      const disc = b * b - (oc.dot(oc) - r * r);
-      if (disc <= 0) continue;
-      const t = -b - Math.sqrt(disc);
-      if (t > 1e-5 && t < best) {
-        best = t;
-        n = o.clone().addScaledVector(d, t).sub(c).normalize();
-        lampHit = false;
-      }
-    }
-    for (const { axis, at } of PLANES) {
-      const dd = d.getComponent(axis);
-      if (Math.abs(dd) < 1e-9) continue;
-      const t = (at - o.getComponent(axis)) / dd;
-      if (!(t > 1e-5 && t < best)) continue;
-      const p = o.clone().addScaledVector(d, t);
-      let inside = true;
-      for (let k = 0; k < 3; k++) if (k !== axis && (p.getComponent(k) < LO[k]! - 1e-6 || p.getComponent(k) > HI[k]! + 1e-6)) inside = false;
-      if (!inside) continue;
-      best = t;
-      n = new THREE.Vector3().setComponent(axis, -Math.sign(dd)); // facing the ray
-      lampHit = axis === 1 && at === 4 && Math.abs(p.x) <= 0.6 && Math.abs(p.z) <= 0.6;
-    }
-    if (!n) return null;
-    if (n.dot(d) > 0) n.negate();
-    return { p: o.clone().addScaledVector(d, best), n, lamp: lampHit };
-  }
-  function rng32(seed: number) {
-    let a = seed >>> 0;
-    return () => {
-      a = (a + 0x6d2b79f5) | 0;
-      let t = Math.imul(a ^ (a >>> 15), 1 | a);
-      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-  }
   const CAP = 6;
   // Pixel i's point of focus: every ray from pixel i through the lens passes it.
   // Inside the box, so the rays go in through the open front.
