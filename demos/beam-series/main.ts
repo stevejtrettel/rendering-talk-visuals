@@ -25,6 +25,11 @@
  * `&clean` (Steve, 2026-11-04: "just the T^k E and the sum for our 2D room
  * side by side without clutter"): no power bars, no readout under the sum;
  * the two rooms larger and centred.
+ *
+ * `&clean&terms` (Steve, 2026-11-04: "one where we look at the powers"): only
+ * the terms, one room, large. `&clean&small` ("then the next we show the
+ * powers (smaller) next to the accumulating scene"): the terms in a small
+ * room on the left, the running sum in a large one on the right.
  */
 
 import * as THREE from 'three';
@@ -37,30 +42,36 @@ const ORTHO_H = 3;
 const stage = createStage({ camera: 'ortho', position: [0, 0, 10], target: [0, 0, 0], orthoHeight: ORTHO_H, lights: false, controls: false });
 const ui = createUI(stage);
 
-const CLEAN = new URLSearchParams(location.search).has('clean');
+const q = new URLSearchParams(location.search);
+const CLEAN = q.has('clean');
+const TERMS = CLEAN && q.has('terms'); // only the terms, one large room
+const SMALL = CLEAN && q.has('small'); // the terms small, the sum large
 const exposure = exposureOf(fluenceOf('L'));
-const S = CLEAN ? 0.47 : 0.44;
-const X = CLEAN ? [-2.67, 2.67] : [-2.6, 2.6];
-const Y0 = CLEAN ? -0.2 : -0.12; // low enough to leave the deck's title a band at the top
+// Each panel's centre and scale: [the terms, the running sum].
+const X = TERMS ? [0, 0] : SMALL ? [-3.4, 1.79] : CLEAN ? [-2.67, 2.67] : [-2.6, 2.6];
+const S = TERMS ? [0.78, 0.78] : SMALL ? [0.3, 0.6] : CLEAN ? [0.47, 0.47] : [0.44, 0.44];
+const Y0 = TERMS ? -0.3 : SMALL ? -0.25 : CLEAN ? -0.2 : -0.12; // low enough to leave the deck's title a band at the top
+const PANELS = TERMS ? [0] : [0, 1];
 
 // The empty rooms (outlines, mirrors, housing), once per panel.
 const blank = new Float64Array(fluenceOf('L').length);
-for (const x of X) {
+for (const i of PANELS) {
   const room = new THREE.Group();
-  room.scale.setScalar(S);
-  room.position.set(x, Y0, 0);
+  room.scale.setScalar(S[i]!);
+  room.position.set(X[i]!, Y0, 0);
   drawRoom(room, { fluence: blank, exposure, walls: false });
   stage.add(room);
 }
 
-const holder = (F: Float64Array, x: number) => {
+const holder = (F: Float64Array, i: number) => {
+  const g = new THREE.Group();
+  g.visible = false;
+  if (!PANELS.includes(i)) return g; // a panel this layout leaves out
   const m = fluenceMesh(F, exposure);
   m.position.z = -0.01;
-  const g = new THREE.Group();
-  g.scale.setScalar(S);
-  g.position.set(x, Y0, 0);
+  g.scale.setScalar(S[i]!);
+  g.position.set(X[i]!, Y0, 0);
   g.add(m);
-  g.visible = false;
   stage.add(g);
   return g;
 };
@@ -77,13 +88,13 @@ const acc = new Float64Array(L.length);
 for (let n = 0; n < BOUNCES; n++) {
   const F = fluenceOfBounce(n);
   for (let i = 0; i < F.length; i++) acc[i]! += F[i]!;
-  terms.push(holder(F, X[0]!));
-  sums.push(holder(Float64Array.from(acc), X[1]!));
+  terms.push(holder(F, 0));
+  sums.push(holder(Float64Array.from(acc), 1));
   termY.push(powerOfBounce(n));
   sumY.push((sumY[n - 1] ?? 0) + powerOfBounce(n));
 }
-const whole = holder(L, X[1]!);
-const rest = holder(fluenceOfBounce(BOUNCES), X[0]!);
+const whole = holder(L, 1);
+const rest = holder(fluenceOfBounce(BOUNCES), 0);
 
 // Names over the panels, the share under the sum, the bars below.
 /**
@@ -137,13 +148,14 @@ class Formula {
 const termName = (n: number) => (n === 0 ? 'E' : n === 1 ? 'TE' : `T^${n}E`);
 const sumName = (n: number) =>
   n === 0 ? 'E' : n === 1 ? 'E + TE' : n === 2 ? 'E + TE + T^2E' : `E + TE + ⋯ + ${termName(n)}`;
-const top = Y0 + ROOM_HALF.y * S + 0.25;
-const leftName = new Formula(0.4, C.bone);
+const top = (i: number) => Y0 + ROOM_HALF.y * S[i]! + 0.25;
+const leftName = new Formula(SMALL ? 0.32 : 0.4, C.bone);
 const rightName = new Formula(0.4, C.bone);
-leftName.group.position.set(X[0]!, top, 0);
-rightName.group.position.set(X[1]!, top, 0);
-stage.add(leftName.group, rightName.group);
-const share = label('', { size: 0.26, color: C.ash, anchorX: 'center', anchorY: 'top', position: [X[1]!, Y0 - ROOM_HALF.y * S - 0.15, 0] });
+leftName.group.position.set(X[0]!, top(0), 0);
+rightName.group.position.set(X[1]!, top(1), 0);
+stage.add(leftName.group);
+if (!TERMS) stage.add(rightName.group);
+const share = label('', { size: 0.26, color: C.ash, anchorX: 'center', anchorY: 'top', position: [X[1]!, Y0 - ROOM_HALF.y * S[1]! - 0.15, 0] });
 stage.add(share);
 share.visible = !CLEAN;
 
