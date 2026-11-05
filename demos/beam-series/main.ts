@@ -21,6 +21,10 @@
  * equilibrium itself, and the left the rest of it, every term from T^8 E on.
  *
  * Steps, not a fade: iterating is not time passing.
+ *
+ * `&clean` (Steve, 2026-11-04: "just the T^k E and the sum for our 2D room
+ * side by side without clutter"): no power bars, no readout under the sum;
+ * the two rooms larger and centred.
  */
 
 import * as THREE from 'three';
@@ -33,10 +37,11 @@ const ORTHO_H = 3;
 const stage = createStage({ camera: 'ortho', position: [0, 0, 10], target: [0, 0, 0], orthoHeight: ORTHO_H, lights: false, controls: false });
 const ui = createUI(stage);
 
+const CLEAN = new URLSearchParams(location.search).has('clean');
 const exposure = exposureOf(fluenceOf('L'));
-const S = 0.44;
-const X = [-2.6, 2.6];
-const Y0 = -0.12; // low enough to leave the deck's title a band at the top
+const S = CLEAN ? 0.47 : 0.44;
+const X = CLEAN ? [-2.67, 2.67] : [-2.6, 2.6];
+const Y0 = CLEAN ? -0.2 : -0.12; // low enough to leave the deck's title a band at the top
 
 // The empty rooms (outlines, mirrors, housing), once per panel.
 const blank = new Float64Array(fluenceOf('L').length);
@@ -140,13 +145,16 @@ rightName.group.position.set(X[1]!, top, 0);
 stage.add(leftName.group, rightName.group);
 const share = label('', { size: 0.26, color: C.ash, anchorX: 'center', anchorY: 'top', position: [X[1]!, Y0 - ROOM_HALF.y * S - 0.15, 0] });
 stage.add(share);
+share.visible = !CLEAN;
 
 const BAR_W = 0.32;
 const BAR_H = 0.75;
 const BASE = -2.62;
 const barX = (n: number) => X[0]! + 0.4 - ((BOUNCES - 1) * 0.45) / 2 + n * 0.45;
-stage.add(polyline([[barX(0) - 0.35, BASE, 0], [barX(BOUNCES - 1) + 0.35, BASE, 0]], { color: C.slate, width: 1.5 }));
-stage.add(label('the power of each term', { size: 0.2, color: C.ash, anchorX: 'left', anchorY: 'top', position: [barX(0) - 0.35, BASE - 0.08, 0] }));
+if (!CLEAN) {
+  stage.add(polyline([[barX(0) - 0.35, BASE, 0], [barX(BOUNCES - 1) + 0.35, BASE, 0]], { color: C.slate, width: 1.5 }));
+  stage.add(label('the power of each term', { size: 0.2, color: C.ash, anchorX: 'left', anchorY: 'top', position: [barX(0) - 0.35, BASE - 0.08, 0] }));
+}
 const bars = termY.map((y, n) => {
   const h = (BAR_H * y) / termY[0]!;
   const m = new THREE.Mesh(new THREE.PlaneGeometry(BAR_W, h), new THREE.MeshBasicMaterial({ color: C.ash }));
@@ -179,7 +187,7 @@ stage.frame((t) => {
   sums.forEach((g, i) => (g.visible = !last && i === n));
   whole.visible = last;
   rest.visible = last;
-  bars.forEach((b, i) => (b.visible = i <= n));
+  bars.forEach((b, i) => (b.visible = !CLEAN && i <= n));
   leftName.set(last ? `${termName(BOUNCES)} + ⋯` : termName(n));
   // Amber is the deck's colour for the equilibrium: only the whole series gets it.
   rightName.color = last ? C.ochre : C.bone;
