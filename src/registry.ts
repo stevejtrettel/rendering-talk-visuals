@@ -332,6 +332,11 @@ export const INFO: Record<string, DemoInfo> = {
     blurb: 'The beam room discretized: its boundary in pieces, each with a circle of direction sectors (?show=pieces); T as a matrix, numbers running past, mostly zeros (?show=matrix); and a single bright source E with (Id - T)^{-1} E beside it, solved by Gaussian elimination on the 1368 x 1368 matrix, once per colour (?show=solve).',
     section: 'Computing a Photograph',
   },
+  'camera-cartoon': {
+    title: 'A Camera, as a Cartoon',
+    blurb: 'A box with a row of pixels and a small lens: one pixel at a time, its rays go out through the lens, meet on the plane in focus and go on into the scene; arrows point back the way the light comes. No room: just the idea of a camera collecting rays.',
+    section: 'Computing a Photograph',
+  },
   'thin-lens-camera': {
     title: 'A Thin-Lens Camera',
     blurb: 'The pinhole camera with a lens: each pixel averages the light field over a fan of rays, one through every point of the lens, all meeting at the pixel\'s point on the focus plane. Sharp where the focus plane meets a surface, blurred elsewhere; aperture 0 is the pinhole. &rgb draws each ray in the colour of its light, without the spectrum graph.',
