@@ -40,6 +40,14 @@
  *           builds with the deck's steps ({deck: 'step', shown}): 0, Id - T;
  *           1, + its inverse; 2, + E; 3, + L. Alone (not in the deck), all of
  *           it. The same magnifier, floating by the pointer.
+ *   cmatrix the camera's matrix C alone, big, with a floating magnifier on its
+ *           entries (Steve, 2026-11-04: "then the matrix that defines the
+ *           camera, where we can zoom in on the number entries"): the
+ *           magnifier centres on the nonzero entry nearest the pointer in its
+ *           row. The camera is a lens camera (Steve: "a lens camera for fun,
+ *           a smallish aperture"): LENS_K rays per pixel through a lens
+ *           APERTURE wide, meeting at FOCUS; each row's entries are 1/LENS_K
+ *           at the light each ray reads (summed where two rays read the same).
  *   camera  the photograph, C L (Steve, 2026-11-04: "we start with E, then we get
  *           L, then we compute C(L), our photograph"): L across the top as a
  *           row, its 4,248 entries; under it, lined up column for column, C,
@@ -85,7 +93,7 @@ const HALF_W = (ORTHO_H * 16) / 9;
 const stage = createStage({ camera: 'ortho', position: [0, 0, 10], target: [0, 0, 0], orthoHeight: ORTHO_H, lights: false, controls: false });
 const ui = createUI(stage);
 const q = new URLSearchParams(location.search);
-const SHOW = (q.get('show') ?? 'solve') as 'pieces' | 'row' | 'system' | 'inverse' | 'camera' | 'matrix' | 'solve';
+const SHOW = (q.get('show') ?? 'solve') as 'pieces' | 'row' | 'system' | 'inverse' | 'cmatrix' | 'camera' | 'matrix' | 'solve';
 const BARE = q.has('bare');
 const T = buildT();
 const P3 = (p: Vec, z = 0): [number, number, number] => [p.x, p.y, z];
@@ -641,7 +649,8 @@ if (SHOW === 'inverse') {
   });
 }
 
-if (SHOW === 'camera') {
+if (SHOW === 'camera' || SHOW === 'cmatrix') {
+  const CMAT = SHOW === 'cmatrix';
   stage.duration = 1;
   const NN = 3 * N;
   const CAM_PIX = 16; // pinhole-camera's
@@ -673,15 +682,32 @@ if (SHOW === 'camera') {
     const a = AIM - Math.atan2(off, DEPTH);
     return v(Math.cos(a), Math.sin(a));
   };
-  /** Each pixel's one entry of L (per colour block), or -1 if its ray meets nothing that sends light toward it. */
-  const pick = Array.from({ length: CAM_PIX }, (_, j) => {
-    const d = rayOf(j);
-    const p = castPiece(PIN, d);
-    if (p < 0) return -1;
-    const k = sectorOf(p, v(-d.x, -d.y));
-    return k < 0 ? -1 : index(p, k);
+  // A lens camera (camera-cartoon's): LENS_K rays per pixel, through points across a lens APERTURE wide at
+  // the pinhole's place, all meeting where the pixel's chief ray meets the plane in focus, FOCUS ahead.
+  const APERTURE = 0.3;
+  const LENS_K = 6;
+  const FOCUS = 4.5;
+  const fwd = v(Math.cos(AIM), Math.sin(AIM));
+  const across = v(-Math.sin(AIM), Math.cos(AIM));
+  /** Each pixel's row of C (the same in each colour block): its nonzero entries, [column within the block, value]. */
+  const camRows = Array.from({ length: CAM_PIX }, (_, j) => {
+    const w = rayOf(j);
+    const Q = add(PIN, w, FOCUS / (w.x * fwd.x + w.y * fwd.y));
+    const m = new Map<number, number>();
+    for (let k = 0; k < LENS_K; k++) {
+      const a = add(PIN, across, -APERTURE / 2 + ((k + 0.5) * APERTURE) / LENS_K);
+      const d0 = sub(Q, a);
+      const dl = Math.hypot(d0.x, d0.y);
+      const d = v(d0.x / dl, d0.y / dl);
+      const p = castPiece(a, d);
+      if (p < 0) continue;
+      const k2 = sectorOf(p, v(-d.x, -d.y));
+      if (k2 < 0) continue;
+      m.set(index(p, k2), (m.get(index(p, k2)) ?? 0) + 1 / LENS_K);
+    }
+    return [...m.entries()].sort((x, y) => x[0] - y[0]);
   });
-  const pixel = (j: number): RGB => (pick[j]! < 0 ? [0, 0, 0] : [0, 1, 2].map((c) => L[c]![pick[j]!]!) as RGB);
+  const pixel = (j: number): RGB => [0, 1, 2].map((c) => camRows[j]!.reduce((acc, [col, w]) => acc + w * L[c]![col]!, 0)) as RGB;
   // Tone as the pictures are: by brightness, keeping hue, exposure from the 90th percentile of the pixels.
   const lumOf = (r: number, g: number, b: number) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
   const ys = Array.from({ length: CAM_PIX }, (_, j) => lumOf(...pixel(j))).filter((y) => y > 0).sort((a, b) => a - b);
@@ -693,9 +719,9 @@ if (SHOW === 'camera') {
   };
 
   // --- Layout --------------------------------------------------------------------------
-  const G = { x0: -4.7, x1: 2.45 }; // the columns of C, and L above them
+  const G = CMAT ? { x0: -4.9, x1: 4.9 } : { x0: -4.7, x1: 2.45 }; // the columns of C, and L above them
   const LROW = { y: 2.05, h: 0.3 };
-  const CM = { y1: 1.62, y0: -0.95 }; // C's rows, top to bottom
+  const CM = CMAT ? { y1: 1.75, y0: -1.75 } : { y1: 1.62, y0: -0.95 }; // C's rows, top to bottom
   const PCOL = { x: 3.05, w: 0.3 };
   const STRIP = { x: 4.45, w: 0.6 };
   const xOfCol = (i: number) => G.x0 + ((i + 0.5) / NN) * (G.x1 - G.x0);
@@ -744,12 +770,12 @@ if (SHOW === 'camera') {
   {
     frame(groups[1]!, G.x0, CM.y0, G.x1, CM.y1);
     for (let c = 0; c < 3; c++)
-      for (let j = 0; j < CAM_PIX; j++) {
-        if (pick[j]! < 0) continue;
-        const d = new THREE.Mesh(new THREE.CircleGeometry(0.04, 14), flat(hexOfTint(c, 1.1)));
-        d.position.set(xOfCol(c * N + pick[j]!), yOfRow(c * CAM_PIX + j), 0.02);
-        groups[1]!.add(d);
-      }
+      for (let j = 0; j < CAM_PIX; j++)
+        for (const [col] of camRows[j]!) {
+          const d = new THREE.Mesh(new THREE.CircleGeometry(CMAT ? 0.032 : 0.028, 12), flat(hexOfTint(c, 1.1)));
+          d.position.set(xOfCol(c * N + col), yOfRow(c * CAM_PIX + j), 0.02);
+          groups[1]!.add(d);
+        }
   }
   // = the column of pixel values.
   {
@@ -784,80 +810,132 @@ if (SHOW === 'camera') {
     groups[3]!.add(m);
     frame(groups[3]!, STRIP.x - STRIP.w / 2, CM.y0, STRIP.x + STRIP.w / 2, CM.y1);
   }
-  // The camera in a small room, under C.
-  {
-    const RS = 0.2;
-    const at = { x: (G.x0 + G.x1) / 2, y: -2.12 };
-    const room = new THREE.Group();
-    room.position.set(at.x, at.y, 0);
-    room.scale.setScalar(RS);
-    drawPieces(room, (i) => (pieces[i]!.kind === 'matte' ? hexOf(pieces[i]!.rgb) : pieces[i]!.kind === 'mirror' ? C.bone : C.ochre), 3);
-    // The rays, each to where it lands, and the camera's box.
-    for (let j = 0; j < CAM_PIX; j++) {
-      const d = rayOf(j);
-      let t = 12;
-      for (let s2 = 0.05; s2 < 12; s2 += 0.05) {
-        const x = add(PIN, d, s2);
-        if (!inside(x)) {
-          t = s2;
-          break;
-        }
-      }
-      room.add(polyline([P3(PIN, 0.02), P3(add(PIN, d, t), 0.02)], { color: C.bone, width: 1, opacity: 0.45 }));
-    }
-    const back = v(-Math.cos(AIM), -Math.sin(AIM));
-    const side = v(-Math.sin(AIM), Math.cos(AIM));
-    const corner = (a: number, b: number) => P3(add(add(PIN, back, a), side, b), 0.03);
-    room.add(polyline([corner(0, -0.8), corner(0.8, -0.8), corner(0.8, 0.8), corner(0, 0.8)], { color: C.bone, width: 2 }));
-    groups[0]!.add(room);
-  }
-
-  // --- Building with the deck ------------------------------------------------------------
-  const setShown = (n: number) => groups.forEach((g, k) => (g.visible = k <= n));
-  setShown(window.parent !== window ? 0 : 3);
+  // --- Building with the deck: on arrival L and C; then the column; then the image. Alone: C only (cmatrix). ---
+  const setShown = (n: number) => groups.forEach((g, k) => (g.visible = CMAT ? k === 1 : k <= n + 1));
+  setShown(window.parent !== window ? 0 : 2);
   window.addEventListener('message', (e) => {
     const d = e.data as { deck?: string; shown?: number } | null;
     if (d?.deck === 'step' && typeof d.shown === 'number') setShown(d.shown);
   });
   window.parent?.postMessage({ demo: 'ready' }, '*');
 
-  // --- Hover a row of C: up to its entry of L, across to its pixel ---------------------------
-  const up = polyline([[0, 0, 0], [0, 0, 0]], { color: C.bone, width: 1.5 });
-  const across = polyline([[0, 0, 0], [0, 0, 0]], { color: C.bone, width: 1.5 });
-  const rowBand = polyline([[0, 0, 0], [0, 0, 0]], { color: C.rust, width: 1.5, opacity: 0.8 });
-  const info = label('', { size: 0.14, color: C.bone, anchorX: 'left', anchorY: 'bottom', position: [0, 0, 0.3] });
-  stage.add(up, across, rowBand, info);
-  const hide = () => (up.visible = across.visible = rowBand.visible = info.visible = false);
-  hide();
+  // --- Hover a row of C --------------------------------------------------------------------
   const canvas = stage.renderer.domElement;
-  canvas.addEventListener('pointermove', (e) => {
-    const rr = canvas.getBoundingClientRect();
-    const wx = (((e.clientX - rr.left) / rr.width) * 2 - 1) * HALF_W;
-    const wy = -(((e.clientY - rr.top) / rr.height) * 2 - 1) * ORTHO_H;
-    if (!groups[1]!.visible || wx < G.x0 || wx > G.x1 || wy < CM.y0 || wy > CM.y1) return hide();
-    const r = Math.max(0, Math.min(ROWS - 1, Math.floor(((CM.y1 - wy) / (CM.y1 - CM.y0)) * ROWS)));
-    const c = Math.floor(r / CAM_PIX);
-    const j = r - c * CAM_PIX;
-    const y = yOfRow(r);
-    setPolyline(rowBand, [[G.x0, y, 0.03], [G.x1, y, 0.03]]);
-    rowBand.visible = true;
-    if (pick[j]! < 0) {
-      up.visible = across.visible = false;
-      info.visible = true;
+  const rowAt = (wy: number) => Math.max(0, Math.min(ROWS - 1, Math.floor(((CM.y1 - wy) / (CM.y1 - CM.y0)) * ROWS)));
+  if (!CMAT) {
+    // Up from each of its entries to the light it reads, across to the pixel it fills.
+    const ups = new THREE.Group();
+    const acrossLine = polyline([[0, 0, 0], [0, 0, 0]], { color: C.bone, width: 1.5 });
+    const rowBand = polyline([[0, 0, 0], [0, 0, 0]], { color: C.rust, width: 1.5, opacity: 0.8 });
+    const info = label('', { size: 0.14, color: C.bone, anchorX: 'left', anchorY: 'bottom', position: [0, 0, 0.3] });
+    stage.add(ups, acrossLine, rowBand, info);
+    const hide = () => (ups.visible = acrossLine.visible = rowBand.visible = info.visible = false);
+    hide();
+    canvas.addEventListener('pointermove', (e) => {
+      const rr = canvas.getBoundingClientRect();
+      const wx = (((e.clientX - rr.left) / rr.width) * 2 - 1) * HALF_W;
+      const wy = -(((e.clientY - rr.top) / rr.height) * 2 - 1) * ORTHO_H;
+      if (!groups[1]!.visible || wx < G.x0 || wx > G.x1 || wy < CM.y0 || wy > CM.y1) return hide();
+      const r = rowAt(wy);
+      const c = Math.floor(r / CAM_PIX);
+      const j = r - c * CAM_PIX;
+      const y = yOfRow(r);
+      setPolyline(rowBand, [[G.x0, y, 0.03], [G.x1, y, 0.03]]);
+      while (ups.children.length) ups.remove(ups.children[0]!);
+      let xMax = G.x0;
+      for (const [col] of camRows[j]!) {
+        const x = xOfCol(c * N + col);
+        xMax = Math.max(xMax, x);
+        ups.add(polyline([[x, y, 0.03], [x, LROW.y - LROW.h / 2, 0.03]], { color: C.bone, width: 1.2 }));
+      }
+      setPolyline(acrossLine, [[xMax, y, 0.03], [PCOL.x - PCOL.w / 2, y, 0.03]]);
+      rowBand.visible = ups.visible = info.visible = true;
+      acrossLine.visible = groups[2]!.visible;
       info.position.set(G.x0 + 0.05, y + 0.04, 0.3);
-      setText(info, `pixel ${j + 1} (${'RGB'[c]}): its ray meets nothing lit; the row is all zeros`);
-      return;
+      const val = pixel(j)[c]!;
+      setText(info, `pixel ${j + 1} (${'RGB'[c]}): ${camRows[j]!.length} nonzero entries (its ${LENS_K} rays through the lens); their sum against L: ${val < 0.001 ? val.toExponential(1) : val.toFixed(4)}`);
+    });
+  } else {
+    // The magnifier: 5 rows by 7 columns of C's entries, centred on the nonzero nearest the pointer in its row.
+    const cv = document.createElement('canvas');
+    cv.width = 1120;
+    cv.height = 800;
+    const ctx = cv.getContext('2d')!;
+    const ztex = new THREE.CanvasTexture(cv);
+    ztex.colorSpace = THREE.SRGBColorSpace;
+    const ZW = 2.8;
+    const ZH = 2.0;
+    const panel = new THREE.Mesh(new THREE.PlaneGeometry(ZW, ZH), new THREE.MeshBasicMaterial({ map: ztex, transparent: true }));
+    const mark = polyline(Array.from({ length: 5 }, () => [0, 0, 0] as [number, number, number]), { color: C.bone, width: 2 });
+    const zt = label('', { size: 0.13, color: C.ash, anchorX: 'center', anchorY: 'bottom', position: [0, 0, 0.3] });
+    zt.textAlign = 'center';
+    stage.add(panel, mark, zt);
+    const fmt = (x: number) => (x === 0 ? '0' : x.toFixed(3).replace(/^0\./, '.'));
+    const entry = (R: number, Cc: number) => {
+      const c = Math.floor(R / CAM_PIX);
+      if (Math.floor(Cc / N) !== c) return 0;
+      const hit = camRows[R - c * CAM_PIX]!.find(([col]) => col === Cc - c * N);
+      return hit ? hit[1] : 0;
+    };
+    function zoom(R0: number, C0: number): void {
+      const rows = 5;
+      const cols = 7;
+      ctx.clearRect(0, 0, cv.width, cv.height);
+      const cw = cv.width / cols;
+      const ch = cv.height / rows;
+      ctx.fillStyle = 'rgba(14,14,14,0.96)';
+      ctx.fillRect(0, 0, cv.width, cv.height);
+      ctx.strokeStyle = '#d9d1c2';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(1.5, 1.5, cv.width - 3, cv.height - 3);
+      ctx.font = `${Math.round(ch * 0.3)}px Menlo, ui-monospace, monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      for (let i = 0; i < rows; i++)
+        for (let k = 0; k < cols; k++) {
+          const val = entry(R0 + i, C0 + k);
+          const c = Math.floor((R0 + i) / CAM_PIX);
+          ctx.fillStyle = val === 0 ? '#5b636b' : `#${new THREE.Color(hexOfTint(c, 1.3)).getHexString()}`;
+          ctx.fillText(fmt(val), (k + 0.5) * cw, (i + 0.5) * ch);
+        }
+      ztex.needsUpdate = true;
+      const x0 = xOfCol(C0) - 0.05;
+      const x1 = xOfCol(C0 + cols - 1) + 0.05;
+      const y1 = yOfRow(R0) + 0.06;
+      const y0 = yOfRow(R0 + rows - 1) - 0.06;
+      setPolyline(mark, [[x0, y0, 0.25], [x1, y0, 0.25], [x1, y1, 0.25], [x0, y1, 0.25], [x0, y0, 0.25]]);
+      let px = (x0 + x1) / 2;
+      px = Math.max(-HALF_W + ZW / 2 + 0.1, Math.min(HALF_W - ZW / 2 - 0.1, px));
+      let py = y1 + 0.3 + ZH / 2;
+      if (py + ZH / 2 > ORTHO_H - 0.3) py = y0 - 0.3 - ZH / 2;
+      panel.position.set(px, py, 0.2);
+      zt.position.set(px, py + ZH / 2 + 0.05, 0.3);
+      setText(zt, `C, rows ${R0 + 1}–${R0 + rows}, columns ${C0 + 1}–${C0 + cols}`);
     }
-    const x = xOfCol(c * N + pick[j]!);
-    setPolyline(up, [[x, y, 0.03], [x, LROW.y - LROW.h / 2, 0.03]]);
-    setPolyline(across, [[x, y, 0.03], [PCOL.x - PCOL.w / 2, y, 0.03]]);
-    up.visible = across.visible = groups[0]!.visible;
-    across.visible = groups[2]!.visible;
-    info.visible = true;
-    info.position.set(Math.min(x + 0.08, G.x1 - 3.2), y + 0.04, 0.3);
-    const val = L[c]![pick[j]!]!;
-    setText(info, `pixel ${j + 1} (${'RGB'[c]}): one entry, 1, in column ${c * N + pick[j]! + 1} of ${NN.toLocaleString('en-US')}; reads L there: ${val < 0.001 ? val.toExponential(1) : val.toFixed(4)}`);
-  });
+    const show = (r: number, wantCol: number) => {
+      const c = Math.floor(r / CAM_PIX);
+      const j = r - c * CAM_PIX;
+      // The nonzero in this row nearest the pointer (every row has some: the camera's rays all land).
+      let best = wantCol;
+      let bd = Infinity;
+      for (const [col] of camRows[j]!) {
+        const d = Math.abs(c * N + col - wantCol);
+        if (d < bd) {
+          bd = d;
+          best = c * N + col;
+        }
+      }
+      zoom(Math.max(0, Math.min(ROWS - 5, r - 2)), Math.max(0, Math.min(NN - 7, best - 3)));
+    };
+    show(CAM_PIX + Math.floor(CAM_PIX / 2), N + (camRows[Math.floor(CAM_PIX / 2)]![0]?.[0] ?? 0));
+    canvas.addEventListener('pointermove', (e) => {
+      const rr = canvas.getBoundingClientRect();
+      const wx = (((e.clientX - rr.left) / rr.width) * 2 - 1) * HALF_W;
+      const wy = -(((e.clientY - rr.top) / rr.height) * 2 - 1) * ORTHO_H;
+      if (wx < G.x0 || wx > G.x1 || wy < CM.y0 || wy > CM.y1) return;
+      show(rowAt(wy), Math.floor(((wx - G.x0) / (G.x1 - G.x0)) * NN));
+    });
+  }
 }
 
 if (SHOW === 'row') {
