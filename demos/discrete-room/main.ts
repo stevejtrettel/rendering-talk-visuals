@@ -47,9 +47,11 @@
  *           animate it"). The room from above, its light as the floor; the
  *           view glides down to the camera's pinhole and turns along its aim
  *           while the walls and mirrors rise into slabs, each coloured by the
- *           light leaving it toward the pinhole; at eye level a band marks the
- *           horizon and the pinhole camera's 16 pixels come in under it, each
- *           under its own column. The view's field of view is the camera's
+ *           light leaving it toward the pinhole; at eye level the floor fades
+ *           and the walls squash onto the horizon, leaving a thin coloured line
+ *           (Steve: "we wouldn't see the floor in the end, and would just see
+ *           the line of pixels essentially"), and the pinhole camera's 16
+ *           pixels grow out of it, each on its own stretch. The view's field of view is the camera's
  *           (90 degrees across: sensor 1.6 wide at depth 0.8), so pixel j's
  *           ray is the middle of column j exactly. A pinhole, not slide 58's
  *           lens, so the match is exact.
@@ -718,6 +720,8 @@ if (SHOW === 'view') {
   // --- The floor: the room's light from above, as on the earlier slides --------------------
   const GW = 168;
   const GH = Math.round((GW * ROOM_HALF.y) / ROOM_HALF.x);
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(2 * ROOM_HALF.x, 2 * ROOM_HALF.y));
+  stage.add(floor);
   {
     const F = new Float32Array(GW * GH * 3).fill(NaN);
     const lit = pieces.map((_, pp) => {
@@ -772,8 +776,7 @@ if (SHOW === 'view') {
     tex.magFilter = THREE.LinearFilter;
     tex.minFilter = THREE.LinearFilter;
     tex.needsUpdate = true;
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(2 * ROOM_HALF.x, 2 * ROOM_HALF.y), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
-    stage.add(floor);
+    floor.material = new THREE.MeshBasicMaterial({ map: tex, transparent: true });
   }
 
   // --- The walls, mirrors and housing, as slabs that rise --------------------------------------
@@ -838,23 +841,12 @@ if (SHOW === 'view') {
   const halfW = HUD_D * Math.tan(Math.PI / 4);
   const halfH = halfW / (16 / 9);
   const tileW = (2 * halfW) / NPIX;
-  const band = new THREE.Mesh(new THREE.PlaneGeometry(2 * halfW, tileW * 0.12), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthTest: false }));
-  band.position.set(0, 0, -HUD_D);
-  hud.add(band);
   const tiles = Array.from({ length: NPIX }, (_, j) => {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(tileW * 0.86, tileW * 0.86), new THREE.MeshBasicMaterial({ color: colourOf(pixels[j]!), transparent: true, depthTest: false }));
-    m.position.set(-halfW + (j + 0.5) * tileW, -halfH + tileW * 0.75, -HUD_D);
+    m.position.set(-halfW + (j + 0.5) * tileW, 0, -HUD_D); // on the horizon
     m.renderOrder = 10;
     hud.add(m);
     return m;
-  });
-  // A thin line from each tile up to its column's horizon, so the columns line up.
-  const ties = Array.from({ length: NPIX }, (_, j) => {
-    const x = -halfW + (j + 0.5) * tileW;
-    const l = polyline([[x, -halfH + tileW * 1.2, -HUD_D], [x, -tileW * 0.1, -HUD_D]], { color: C.bone, width: 1, opacity: 0.45 });
-    l.renderOrder = 9;
-    hud.add(l);
-    return l;
   });
 
   // --- The motion ---------------------------------------------------------------------------------
@@ -868,11 +860,13 @@ if (SHOW === 'view') {
   const Q1 = lookQuat(END_POS, new THREE.Vector3(PIN.x + Math.cos(AIM), PIN.y + Math.sin(AIM), EYE), new THREE.Vector3(0, 0, 1));
   const T0 = 1.2; // hold the top view
   const T1 = 7.2; // arrive
-  const T2 = 8.4; // horizon band
-  const T3 = 11; // pixels in
+  const HOLD3D = 1.5; // at eye level, the 3D room, before it flattens (Steve: "the 3D-ness is actually kinda cool")
+  const T2 = T1 + HOLD3D + 2.2; // the floor gone, the walls squashed onto the horizon: a line
+  const T3 = T2 + 2.2; // the pixels grown out of it
+  const THIN = 0.012; // the line's half-height, in world units
   stage.loop = false;
-  stage.duration = 13.5;
-  stage.captureEnd = 13.5;
+  stage.duration = T3 + 2.5;
+  stage.captureEnd = T3 + 2.5;
   const ease = (u: number) => (u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u));
   stage.frame((t) => {
     const u = ease((t - T0) / (T1 - T0));
@@ -882,16 +876,21 @@ if (SHOW === 'view') {
     cam.quaternion.slerpQuaternions(Q0, Q1, ease(Math.max(0, ((t - T0) / (T1 - T0) - 0.15) / 0.85)));
     cam.fov = 20 + (END_VFOV - 20) * u;
     cam.updateProjectionMatrix();
-    slabs.scale.z = Math.max(0.002, H * ease((t - T0) / ((T1 - T0) * 0.6)));
+    // The walls rise from the floor to H; then, at eye level, squash onto the horizon.
+    const rise = H * ease((t - T0) / ((T1 - T0) * 0.6));
+    const sq = ease((t - T1 - HOLD3D) / (T2 - T1 - HOLD3D));
+    const z0 = (EYE - THIN) * sq;
+    const z1 = rise + (EYE + THIN - rise) * sq;
+    slabs.position.z = z0;
+    slabs.scale.z = Math.max(0.002, z1 - z0);
     camGroup.visible = u < 0.95;
-    const b = ease((t - T1) / (T2 - T1));
-    (band.material as THREE.MeshBasicMaterial).opacity = 0.45 * b;
-    band.visible = b > 0;
+    (floor.material as THREE.MeshBasicMaterial).opacity = 1 - ease((t - T1 - HOLD3D) / ((T2 - T1 - HOLD3D) * 0.7));
+    floor.visible = (floor.material as THREE.MeshBasicMaterial).opacity > 0;
     tiles.forEach((m, j) => {
-      const s = ease((t - T2 - (j * (T3 - T2)) / NPIX / 1.3) / 0.35);
-      (m.material as THREE.MeshBasicMaterial).opacity = s;
-      m.visible = s > 0;
-      ties[j]!.visible = s > 0.5;
+      const g = ease((t - T2 - (j * (T3 - T2)) / NPIX / 1.4) / 0.45);
+      (m.material as THREE.MeshBasicMaterial).opacity = g;
+      m.scale.y = 0.08 + 0.92 * g; // grows up and down out of the line
+      m.visible = g > 0;
     });
   });
 }
