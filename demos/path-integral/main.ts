@@ -66,21 +66,37 @@
  * colour (36 lamp points, each checked for a clear line), with the heights
  * compressed by a power 0.6 so the walls show beside the bright floor. A
  * schematic, not the literal 4-dimensional domain; the balls' own bounce points
- * are left out.
+ * are left out. (Shown, then set aside: Steve found the unfolding confusing.)
+ *
+ * ?space=2 (Steve, 2026-11-05: "I'd rather just have a small grid or schematic
+ * region A x S^2 where we draw a function over it"): the integrand of C T E on
+ * a true 2D slice of A x S^2, drawn like the Riemann and Monte Carlo surfaces
+ * (field2d's plate and glass). Across: lens points on a line through the
+ * cartoon's a. In depth: directions u_1 at x_1 on the half-circle in the
+ * vertical plane of the cartoon's u_1. Height: f cos(theta_1) E(x_2), each
+ * point two ray casts in the box. Pixel i (the cartoon's: its path now bounces
+ * on the floor) is focused 0.4 of the way to x_1 (?focus=), so the lens points
+ * land across the floor and the balls' shadows cut the ridge at both ends. The
+ * cartoon's path is the ochre spike.
  */
 
 import * as THREE from 'three';
 import { createStage, C, matte, glossy, glow, flat } from '@';
 import { polyline, setPolyline } from '@/lines';
 import { label, setText } from '@/text';
+import { CAM_POS, CAM_TARGET, Z, floorPlate, glassSurface, surfaceRim } from '@/field2d';
+import { FIELD_HALF } from '@/functions';
 
 const q = new URLSearchParams(location.search);
 const N = Math.max(0, Math.min(2, Number(q.get('n') ?? 0)));
 const WALK = q.has('walk');
 const SPACE = q.has('space');
 const SPACE_N = Number(q.get('space') || 0);
+const FOCUS = Number(q.get('focus') ?? 0.4); // ?space=2: where pixel i is focused, as a fraction of the way from a to the cartoon's x_1
 
-const stage = SPACE && SPACE_N === 0
+const stage = SPACE && SPACE_N === 2
+  ? createStage({ camera: 'persp', position: CAM_POS, target: CAM_TARGET, fov: 38, lights: false, controls: false })
+  : SPACE && SPACE_N === 0
   ? createStage({ camera: 'persp', position: [0.9, 3.1, 17.5], target: [1.0, 2.3, 1.5], fov: 35, lights: false, controls: false })
   : createStage({ camera: 'persp', position: [-0.4, 3.0, 15.5], target: [-1.5, 2.0, 1.5], fov: 43, lights: false, controls: false });
 const scene = stage.scene;
@@ -273,6 +289,7 @@ function rng32(seed: number) {
 }
 
 if (WALK) walkMode();
+else if (SPACE && SPACE_N === 2) sliceMode();
 else if (SPACE && SPACE_N === 1) netMode();
 else if (SPACE) spaceMode();
 else fixedPath();
@@ -281,7 +298,7 @@ else fixedPath();
 function fixedPath() {
   const PATHS: [number, number, number][][] = [
     [[0.15, 3.99, -0.1]],
-    [[1.2, 1.2, -1.99], [-0.2, 3.99, 0.25]],
+    [[-0.2, 0.01, -0.1], [0.2, 3.99, 0.1]],
     [[-0.5, 0.01, 1.5], [-1.99, 2.3, 1.0], [0.3, 3.99, -0.2]],
   ];
   const normalAt = (p: THREE.Vector3) =>
@@ -298,7 +315,7 @@ function fixedPath() {
   name('d', '', mid(A, xs[0]!, 0.22), 0.05, 0.28, C.ochre);
   const XOFF: [number, number][][] = [
     [[0.2, 0.42]],
-    [[0.38, -0.2], [0.2, 0.42]],
+    [[0.3, -0.32], [0.2, 0.42]],
     [[0.12, -0.38], [-0.3, 0.3], [0.2, 0.42]],
   ];
   xs.forEach((p, i) => {
@@ -660,6 +677,72 @@ function netMode() {
     for (const mesh of meshes) mesh.scale.y = Math.max(0.001, rise);
     pathDots.forEach((d) => (d.m.position.y = 0.03 + d.h * rise));
   });
+}
+
+// --- The space of paths of C T E as a region, with the integrand over it ------------
+function sliceMode() {
+  for (const o of roomParts) o.visible = false;
+  lamp.visible = white.visible = blue.visible = cam.visible = false;
+  for (const o of scene.children) if ((o as { userData: { label?: boolean } }).userData.label) o.visible = false;
+
+  // A x S^2 is four-dimensional; the region drawn is a true two-dimensional
+  // slice of it: one line across the lens (through the cartoon's lens point a,
+  // along the camera's horizontal), by one half-circle of directions u_1 at x_1
+  // (in the vertical plane of the cartoon's u_1). Pixel i is the cartoon's: its
+  // ray from a lands on the floor at the cartoon's x_1, and it is focused 0.4 of
+  // the way there, so other lens points land elsewhere on the floor, some of
+  // them in a ball's shadow (all on the floor). The cartoon's own path is one point of the
+  // slice, marked.
+  const X1 = new THREE.Vector3(-0.2, 0, -0.1);
+  const X2 = new THREE.Vector3(0.2, 4, 0.1);
+  const F = A.clone().lerp(X1, FOCUS);
+  const HALF = Math.sqrt(LENS_R * LENS_R - 0.16 * 0.16); // the half-length of the line across the lens
+  const lensAt = (r: number) => lensC.clone().addScaledVector(up, 0.16).addScaledVector(right, r);
+  const TDIR = X2.clone().sub(X1).setY(0).normalize(); // horizontal, in the plane of the cartoon's u_1
+  const albedoAt = (p: V) => {
+    const lumOf = (c: number) => {
+      const col = new THREE.Color(c);
+      return 0.2126 * col.r + 0.7152 * col.g + 0.0722 * col.b;
+    };
+    if (Math.abs(p.distanceTo(white.position) - 0.8) < 1e-3) return lumOf(0xd8d4cc);
+    if (Math.abs(p.distanceTo(blue.position) - 0.55) < 1e-3) return lumOf(0x5a72c8);
+    if (p.x < -2 + 1e-3) return lumOf(RED);
+    if (p.x > 2 - 1e-3) return lumOf(GREEN);
+    return lumOf(WHITE);
+  };
+  /** The integrand of C T E at (a, u_1): f cos(theta_1) E(x_2), for a matte surface f = albedo / pi. */
+  function integrand(s: number, alpha: number): number {
+    const a = lensAt(s);
+    const h = cast(a, F.clone().sub(a).normalize());
+    if (!h || h.lamp) return 0;
+    const n = h.n;
+    const t = TDIR.clone().addScaledVector(n, -TDIR.dot(n)).normalize();
+    const u = n.clone().multiplyScalar(Math.cos(alpha)).addScaledVector(t, Math.sin(alpha));
+    const h2 = cast(h.p.clone().addScaledVector(n, 1e-3), u);
+    return h2?.lamp ? (albedoAt(h.p) * Math.cos(alpha)) / Math.PI : 0;
+  }
+  const toS = (x: number) => (x / FIELD_HALF) * HALF * 0.98;
+  const toAlpha = (z: number) => (z / FIELD_HALF) * (Math.PI / 2) * 0.995;
+  let max = 0;
+  for (let i = 0; i <= 80; i++) for (let j = 0; j <= 80; j++) max = Math.max(max, integrand(toS(-3 + (6 * i) / 80), toAlpha(-3 + (6 * j) / 80)));
+  const K = 1.25 / (Z * Math.max(max, 1e-9));
+  const f = (x: number, z: number) => K * integrand(toS(x), toAlpha(z));
+  scene.add(floorPlate(12));
+  scene.add(glassSurface(f, { res: 220, wire: 44 }));
+  scene.add(surfaceRim(f));
+  // The axes: A across, S^2 in depth.
+  name('A', '', new THREE.Vector3(0, 0, FIELD_HALF + 0.55), 0, 0, 0x8fb5d6, 0.5);
+  name('S²', '', new THREE.Vector3(FIELD_HALF + 0.65, 0, 0), 0, 0, 0x8fb5d6, 0.5);
+  // The cartoon's path: a is 0.2 to the right of the lens centre, u_1 points at X2.
+  const u1 = X2.clone().sub(X1).normalize();
+  const alpha1 = Math.atan2(u1.dot(TDIR), u1.y);
+  const px = (0.2 / (HALF * 0.98)) * FIELD_HALF;
+  const pz = (alpha1 / ((Math.PI / 2) * 0.995)) * FIELD_HALF;
+  const top = new THREE.Vector3(px, f(px, pz) * Z, pz);
+  scene.add(polyline([new THREE.Vector3(px, 0.01, pz), top], { color: C.ochre, width: 3 }));
+  dot(new THREE.Vector3(px, 0.01, pz), C.ochre, 0.08);
+  dot(top, C.ochre, 0.08);
+  stage.duration = 10;
 }
 
 // --- Random walks ----------------------------------------------------------------
