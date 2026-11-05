@@ -66,8 +66,8 @@ const WALK = q.has('walk');
 const SPACE = q.has('space');
 
 const stage = SPACE
-  ? createStage({ camera: 'persp', position: [0.9, 3.1, 17.5], target: [1.0, 1.75, 1.5], fov: 34, lights: false, controls: false })
-  : createStage({ camera: 'persp', position: [-0.4, 3.0, 15.5], target: [-1.5, 1.05, 1.5], fov: 31, lights: false, controls: false });
+  ? createStage({ camera: 'persp', position: [0.9, 3.1, 17.5], target: [1.0, 2.3, 1.5], fov: 35, lights: false, controls: false })
+  : createStage({ camera: 'persp', position: [-0.4, 3.0, 15.5], target: [-1.5, 2.0, 1.5], fov: 43, lights: false, controls: false });
 const scene = stage.scene;
 
 // --- Light: soft, so the room reads; the lamp is the one bright thing. -------
