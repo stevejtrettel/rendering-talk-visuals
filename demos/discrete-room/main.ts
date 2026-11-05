@@ -25,7 +25,12 @@
  *           entries, 4,104 x 4,104: three blocks on the diagonal (the colours
  *           never mix) and zeros everywhere else. L is the solution for the
  *           `ray` source, so the picture is an equation that holds. Symbol
- *           labels are the deck's.
+ *           labels are the deck's. A magnifier (Steve, 2026-11-04: "hover on a
+ *           small subset and it zooms in on like a 5x5 grid of numbers at that
+ *           point, or a 1x10 for a vector"): over T, a box marks the spot and
+ *           the panel at the right shows that 5 x 5 patch of T's entries; over
+ *           a column, 10 of its entries. Nonzero entries in their block's
+ *           colour, zeros grey.
  *   matrix  T (its green channel; the others have the same zeros) as numbers,
  *           a window of it running past, mostly zeros; beside it the whole
  *           matrix, a dot per nonzero entry, and the window's place in it.
@@ -258,6 +263,109 @@ if (SHOW === 'system') {
   tm.position.set(X.T0 + H / 2, CY, 0);
   stage.add(tm);
   frame(X.T0, X.T0 + H);
+
+  // --- The magnifier ------------------------------------------------------------------
+  const tAt = (R: number, Cc: number) => {
+    const c = Math.floor(R / N);
+    if (Math.floor(Cc / N) !== c) return { v: 0, c }; // off the diagonal blocks: the colours never mix
+    const r = R - c * N;
+    const col = Cc - c * N;
+    const cs = T.cols[r]!;
+    for (let e = 0; e < cs.length; e++) if (cs[e] === col) return { v: T.rowScale[c]![r]! * T.vals[r]![e]!, c };
+    return { v: 0, c };
+  };
+  const vecAt = (F: Float64Array[], i: number) => {
+    const c = Math.floor(i / N);
+    return { v: F[c]![i - c * N]!, c };
+  };
+  const ZOOM = { cx: 4.15, cy: CY, size: 2.2 };
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 800;
+  const ctx = cv.getContext('2d')!;
+  const ztex = new THREE.CanvasTexture(cv);
+  ztex.colorSpace = THREE.SRGBColorSpace;
+  const panel = new THREE.Mesh(new THREE.PlaneGeometry(ZOOM.size, ZOOM.size), new THREE.MeshBasicMaterial({ map: ztex, transparent: true }));
+  panel.position.set(ZOOM.cx, ZOOM.cy, 0.05);
+  stage.add(panel);
+  const zoomFrame = polyline(Array.from({ length: 5 }, () => [0, 0, 0] as [number, number, number]), { color: C.bone, width: 1.5 });
+  const box = polyline(Array.from({ length: 5 }, () => [0, 0, 0] as [number, number, number]), { color: C.bone, width: 2 });
+  const lead1 = polyline([[0, 0, 0], [0, 0, 0]], { color: C.bone, width: 1, opacity: 0.6 });
+  const lead2 = polyline([[0, 0, 0], [0, 0, 0]], { color: C.bone, width: 1, opacity: 0.6 });
+  stage.add(zoomFrame, box, lead1, lead2);
+  const zoomTitle = label('', { size: 0.15, color: C.ash, anchorX: 'center', anchorY: 'bottom', position: [ZOOM.cx, 0, 0.05] });
+  zoomTitle.textAlign = 'center';
+  stage.add(zoomTitle);
+  const hex = (c: number) => {
+    const col = new THREE.Color().setRGB(...(TINT[c]!.map((t) => Math.min(1, t * 1.25)) as RGB), THREE.LinearSRGBColorSpace);
+    return `#${col.getHexString()}`;
+  };
+  const fmt = (x: number) => (x === 0 ? '0' : x >= 0.01 ? x.toFixed(3).replace(/^0\./, '.') : x.toFixed(4).replace(/^0\./, '.'));
+  const rect = (x0: number, y0: number, x1: number, y1: number): [number, number, number][] => [[x0, y0, 0.06], [x1, y0, 0.06], [x1, y1, 0.06], [x0, y1, 0.06], [x0, y0, 0.06]];
+  /** Draw the panel: rows x cols cells of `cell(i, j)`; its frame sized to fit, and leader lines from the marked box. */
+  function draw(rows: number, cols: number, cell: (i: number, j: number) => { v: number; c: number }, title: string, bx: [number, number, number, number]): void {
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    // Square cells for T; for a vector, cells three times as wide as tall, so the numbers are as big.
+    const ch = cv.height / Math.max(rows, cols);
+    const cw = cols === 1 ? ch * 3 : ch;
+    const w = cw * cols;
+    const h = ch * rows;
+    const ox = (cv.width - w) / 2;
+    const oy = (cv.height - h) / 2;
+    ctx.fillStyle = 'rgba(16,16,16,0.92)';
+    ctx.fillRect(ox, oy, w, h);
+    ctx.font = `${Math.round(cols > 1 ? ch * 0.27 : ch * 0.42)}px Menlo, ui-monospace, monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (let i = 0; i < rows; i++)
+      for (let j = 0; j < cols; j++) {
+        const { v, c } = cell(i, j);
+        ctx.fillStyle = v === 0 ? '#5b636b' : hex(c);
+        ctx.fillText(fmt(v), ox + (j + 0.5) * cw, oy + (i + 0.5) * ch);
+      }
+    ztex.needsUpdate = true;
+    // The frame round the numbers, in world units.
+    const k = ZOOM.size / cv.width;
+    const fx0 = ZOOM.cx - ZOOM.size / 2 + ox * k;
+    const fx1 = fx0 + w * k;
+    const fy1 = ZOOM.cy + ZOOM.size / 2 - oy * k;
+    const fy0 = fy1 - h * k;
+    setPolyline(zoomFrame, rect(fx0, fy0, fx1, fy1));
+    setPolyline(box, rect(...bx));
+    setPolyline(lead1, [[bx[2], bx[3], 0.06], [fx0, fy1, 0.06]]);
+    setPolyline(lead2, [[bx[2], bx[1], 0.06], [fx0, fy0, 0.06]]);
+    zoomTitle.position.y = fy1 + 0.08;
+    setText(zoomTitle, title);
+  }
+  const PAD = 0.05; // the marking box is drawn bigger than the entries it covers, so it can be seen
+  const yOf = (i: number) => CY + H / 2 - (i / NN) * H;
+  const xOf = (j: number) => X.T0 + (j / NN) * H;
+  const block = (i: number) => 'RGB'[Math.floor(i / N)]!;
+  function zoomT(R: number, Cc: number): void {
+    R = Math.max(0, Math.min(NN - 5, R - 2));
+    Cc = Math.max(0, Math.min(NN - 5, Cc - 2));
+    draw(5, 5, (i, j) => tAt(R + i, Cc + j), `T, rows ${R + 1}–${R + 5}\ncolumns ${Cc + 1}–${Cc + 5}`, [xOf(Cc) - PAD, yOf(R + 5) - PAD, xOf(Cc + 5) + PAD, yOf(R) + PAD]);
+  }
+  function zoomVec(name: string, F: Float64Array[], x: number, i: number): void {
+    i = Math.max(0, Math.min(NN - 10, i - 5));
+    draw(10, 1, (k) => vecAt(F, i + k), `${name}, entries\n${i + 1}–${i + 10} (${block(i)})`, [x - W / 2 - PAD, yOf(i + 10) - PAD, x + W / 2 + PAD, yOf(i) + PAD]);
+  }
+  // Start on a nonzero patch of the green block.
+  {
+    const r = Math.floor(N * 0.42);
+    zoomT(N + r, N + T.cols[r]![Math.floor(T.cols[r]!.length / 2)]!);
+  }
+  const canvas = stage.renderer.domElement;
+  canvas.addEventListener('pointermove', (e) => {
+    const rr = canvas.getBoundingClientRect();
+    const wx = (((e.clientX - rr.left) / rr.width) * 2 - 1) * HALF_W;
+    const wy = -(((e.clientY - rr.top) / rr.height) * 2 - 1) * ORTHO_H;
+    if (Math.abs(wy - CY) > H / 2) return;
+    const i = Math.floor(((CY + H / 2 - wy) / H) * NN);
+    if (wx >= X.T0 && wx <= X.T0 + H) zoomT(i, Math.floor(((wx - X.T0) / H) * NN));
+    else if (Math.abs(wx - X.L1) < W) zoomVec('L', L, X.L1, i);
+    else if (Math.abs(wx - X.E) < W) zoomVec('E', E, X.E, i);
+    else if (Math.abs(wx - X.L2) < W) zoomVec('L', L, X.L2, i);
+  });
 }
 
 if (SHOW === 'row') {
