@@ -90,6 +90,7 @@ import { FIELD_HALF } from '@/functions';
 const q = new URLSearchParams(location.search);
 const N = q.get('space') === '3' ? 1 : Math.max(0, Math.min(2, Number(q.get('n') ?? 0)));
 const WALK = q.has('walk');
+const BUCKETS = q.has('buckets');
 const SPACE = q.has('space');
 const SPACE_N = Number(q.get('space') || 0);
 // ?space=3: where the plate sits beside the box, its tilt toward the viewer, its yaw, its size.
@@ -99,7 +100,9 @@ const PAIR_YAW = -0.42;
 const PAIR_SCALE = 0.62;
 const FOCUS = Number(q.get('focus') ?? 0.4); // ?space=2: where pixel i is focused, as a fraction of the way from a to the cartoon's x_1
 
-const stage = SPACE && SPACE_N === 3
+const stage = WALK && BUCKETS
+  ? createStage({ camera: 'persp', position: [-0.6, 2.4, 16.5], target: [-1.4, 0.75, 1.5], fov: 43, lights: false, controls: false })
+  : SPACE && SPACE_N === 3
   ? createStage({ camera: 'persp', position: [1.7, 3.3, 19.5], target: [1.8, 1.8, 1.5], fov: 34, lights: false, controls: false })
   : SPACE && SPACE_N === 2
   ? createStage({ camera: 'persp', position: CAM_POS, target: CAM_TARGET, fov: 38, lights: false, controls: false })
@@ -811,7 +814,13 @@ function walkMode() {
       o = h.p;
     }
   }
-  const COUNT = 40;
+  // ?buckets: N1 walks one at a time (slow, then faster), then RAPID walks fired at
+  // RATE a second, each flashing whole for LIFE seconds.
+  const N1 = 30;
+  const RAPID = 1800;
+  const RATE = 60;
+  const LIFE = 0.22;
+  const COUNT = BUCKETS ? N1 + RAPID : 40;
   let seed = 1;
   for (; seed < 10000; seed++) {
     const rnd = rng32(seed);
@@ -819,17 +828,28 @@ function walkMode() {
   }
   const rnd = rng32(seed);
   const walks = Array.from({ length: COUNT }, () => walk(rnd));
+  console.log('walks reaching the lamp:', walks.filter((w) => w.end === 'lamp').length, 'of', COUNT);
 
-  // Timing: each segment grows in SEG seconds; each walk then holds.
-  const SEG = 0.4;
-  const HOLD = 1.6;
+  // Timing: each segment of walk w grows in seg[w] seconds; the walk then holds
+  // hold[w]. With ?buckets the first few are slow, then they speed up.
+  const SLOW = 6;
+  const seg = walks.map((_, i) => (BUCKETS ? Math.max(0.016, 0.4 * Math.pow(0.84, Math.max(0, i - SLOW))) : 0.4));
+  const hold = walks.map((_, i) => (BUCKETS ? Math.max(0.03, 1.6 * Math.pow(0.8, Math.max(0, i - SLOW))) : 1.6));
   const starts: number[] = [];
+  const doneAt: number[] = [];
+  const ONE = BUCKETS ? N1 : COUNT; // walks shown one at a time
   let total = 0.6;
-  for (const w of walks) {
+  walks.slice(0, ONE).forEach((w, i) => {
     starts.push(total);
-    total += (w.pts.length - 1) * SEG + HOLD;
+    doneAt.push(total + (w.pts.length - 1) * seg[i]!);
+    total += (w.pts.length - 1) * seg[i]! + hold[i]!;
+  });
+  const T2 = total; // rapid fire starts
+  for (let i = ONE; i < COUNT; i++) {
+    starts.push(T2 + (i - ONE) / RATE);
+    doneAt.push(T2 + (i - ONE) / RATE);
   }
-  stage.duration = total;
+  stage.duration = BUCKETS ? T2 + RAPID / RATE + 5 : total;
 
   // Earlier walks stay, faint, in their outcome's colour (the last KEEP of them).
   const KEEP = 12;
@@ -844,15 +864,69 @@ function walkMode() {
   scene.add(live);
   const lensDot = dot(A, 0x8fb5d6, 0.06);
   const hemis: THREE.Group[] = [];
-  const termName = (n: number) => (n === 0 ? 'C E' : n === 1 ? 'C T E' : n <= 3 ? `C T${n === 2 ? '²' : '³'} E` : `C T^${n} E`);
+  const SUP = ['', '', '²', '³', '⁴', '⁵', '⁶'];
+  const termName = (n: number) => (n === 0 ? 'C E' : n === 1 ? 'C T E' : `C T${SUP[n]} E`);
   const readout = name('', '', lensC, 0.2, 2.1, C.bone, 0.26);
   readout.anchorX = 'left';
+
+  // ?buckets: a row of buckets under the box, one per term C T^n E. A walk that
+  // reaches the lamp after n bounces flies, shrunk, into bucket n and leaves a
+  // tally there.
+  const NB = 6; // buckets for n = 0 .. 4, and one for every longer path (n >= 5)
+  // Level on screen: each bucket's name sits at a fixed point of the frame, at a fixed distance.
+  const bucketAt = (n: number) => {
+    const ndc = new THREE.Vector3(-0.66 + 0.262 * Math.min(n, NB - 1), -0.5, 0.5).unproject(stage.camera);
+    const dir = ndc.sub(stage.camera.position).normalize();
+    return stage.camera.position.clone().addScaledVector(dir, 11.5);
+  };
+  const FLY = walks.map(() => 0.6);
+  const tallies: THREE.Mesh[][] = [];
+  const flyers: THREE.Object3D[] = [];
+  const rapid: THREE.Object3D[] = [];
+  if (BUCKETS) {
+    for (let n = 0; n < NB; n++) {
+      const c = bucketAt(n);
+      const g = new THREE.Group();
+      g.quaternion.copy(bill);
+      g.position.copy(c);
+      const lab = label(n === NB - 1 ? '⋯' : termName(n), { size: 0.36, color: C.bone, anchorX: 'center', anchorY: 'middle' });
+      g.add(lab);
+      // The bucket: an open-topped tray under the name.
+      const W2 = 0.85;
+      g.add(polyline([[-W2, -0.32, 0], [-W2, -1.55, 0], [W2, -1.55, 0], [W2, -0.32, 0]], { color: C.slate, width: 2 }));
+      scene.add(g);
+      const row: THREE.Mesh[] = [];
+      for (let k = 0; k < 40; k++) {
+        const m = new THREE.Mesh(new THREE.CircleGeometry(0.075, 16), flat(C.ochre));
+        m.position.set(-W2 + 0.2 + (k % 8) * 0.2, -1.4 + Math.floor(k / 8) * 0.2, 0.01);
+        m.visible = false;
+        g.add(m);
+        row.push(m);
+      }
+      tallies.push(row);
+    }
+    for (let k = 0; k < Math.ceil(RATE * LIFE) + 3; k++) {
+      const l = polyline(Array.from({ length: MAXP }, () => A), { color: C.slate, width: 1.5, opacity: 0.6 });
+      l.visible = false;
+      scene.add(l);
+      rapid.push(l);
+    }
+    for (let k = 0; k < 12; k++) {
+      const l = polyline(Array.from({ length: MAXP }, () => A), { color: C.ochre, width: 2.5 });
+      l.visible = false;
+      scene.add(l);
+      flyers.push(l);
+    }
+  }
 
   let shownWalk = -1;
   stage.frame((t) => {
     const u = t % stage.duration;
     let w = 0;
-    while (w + 1 < walks.length && starts[w + 1]! <= u) w++;
+    while (w + 1 < ONE && starts[w + 1]! <= u) w++;
+    const inRapid = BUCKETS && u >= T2;
+    live.visible = lensDot.visible = !inRapid;
+    if (inRapid) ghosts.forEach((g) => (g.visible = false));
     const W = walks[w]!;
     if (w !== shownWalk) {
       shownWalk = w;
@@ -868,7 +942,7 @@ function walkMode() {
     }
     const local = Math.max(0, u - starts[w]!);
     const segs = W.pts.length - 1;
-    const grown = Math.min(segs, local / SEG);
+    const grown = Math.min(segs, local / seg[w]!);
     const k = Math.floor(grown);
     const pts = W.pts.slice(0, k + 1);
     if (k < segs) pts.push(W.pts[k]!.clone().lerp(W.pts[k + 1]!, grown - k));
@@ -878,7 +952,7 @@ function walkMode() {
     const lit = done && W.end === 'lamp';
     (live.material as unknown as { color: THREE.Color }).color.set(lit ? C.ochre : C.slate);
     // The hemisphere where the walk is choosing its next direction.
-    hemis.forEach((h, i) => (h.visible = !done && i + 1 <= grown && i + 1 > grown - 1));
+    hemis.forEach((h, i) => (h.visible = seg[w]! > 0.15 && !done && i + 1 <= grown && i + 1 > grown - 1));
     const bounces = Math.min(k, W.normals.length);
     let text = `walk ${w + 1}: ${bounces} bounce${bounces === 1 ? '' : 's'}`;
     if (done) {
@@ -890,7 +964,53 @@ function walkMode() {
             ? `walk ${w + 1}: left the box: adds 0`
             : `walk ${w + 1}: gave up after ${CAP} bounces: adds 0`;
     }
+    if (inRapid) {
+      const fired = Math.min(RAPID, Math.floor((u - T2) * RATE) + 1);
+      const hits = walks.slice(0, ONE + fired).filter((x) => x.end === 'lamp').length;
+      text = `${ONE + fired} walks: ${hits} reached the light`;
+      hemis.forEach((h) => (h.visible = false));
+      shownWalk = -1;
+      // The walks in flight right now, each shown whole for LIFE seconds.
+      rapid.forEach((l) => (l.visible = false));
+      let r = 0;
+      for (let i = Math.max(ONE, ONE + fired - Math.ceil(RATE * LIFE) - 1); i < ONE + fired && r < rapid.length; i++) {
+        if (u - starts[i]! > LIFE) continue;
+        const ps = walks[i]!.pts.slice();
+        while (ps.length < MAXP) ps.push(ps[ps.length - 1]!.clone());
+        const l = rapid[r++]!;
+        setPolyline(l as never, ps);
+        ((l as unknown as { material: { color: THREE.Color } }).material).color.set(walks[i]!.end === 'lamp' ? C.ochre : C.slate);
+        l.visible = true;
+      }
+    }
     setText(readout, text);
+
+    if (!BUCKETS) return;
+    // Tallies: every lamp walk whose flight has landed.
+    const counts = new Array(NB).fill(0);
+    let fl = 0;
+    flyers.forEach((f) => (f.visible = false));
+    walks.forEach((wk, i) => {
+      if (wk.end !== 'lamp') return;
+      const n = Math.min(wk.pts.length - 2, NB - 1);
+      const t0 = doneAt[i]!;
+      const t1 = t0 + FLY[i]!;
+      if (u >= t1) counts[n]++;
+      else if (u >= t0 && fl < flyers.length) {
+        // In flight: the path shrinks toward its bucket.
+        const e = (u - t0) / (t1 - t0);
+        const ee = e * e * (3 - 2 * e);
+        const cen = wk.pts.reduce((m, p) => m.add(p), new THREE.Vector3()).multiplyScalar(1 / wk.pts.length);
+        const target = bucketAt(n).clone().add(new THREE.Vector3(0, -0.9, 0).applyQuaternion(bill));
+        const sc = 1 - 0.88 * ee;
+        const ps = wk.pts.map((p) => p.clone().sub(cen).multiplyScalar(sc).add(cen.clone().lerp(target, ee)));
+        while (ps.length < MAXP) ps.push(ps[ps.length - 1]!.clone());
+        const f = flyers[fl++]!;
+        setPolyline(f as never, ps);
+        f.visible = true;
+      }
+    });
+    tallies.forEach((row, n) => row.forEach((m, j) => (m.visible = j < counts[n])));
   });
 }
 
