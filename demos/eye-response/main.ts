@@ -32,9 +32,9 @@ stage.duration = 1;
 const ui = createUI(stage);
 
 // --- Figure spec -----------------------------------------------------------
-const SPEC = { x0: -5.1, x1: -3.05, yb: -0.55, h: 1.6 }; // the spectrum's panel
+const SPEC = { x0: -5.1, x1: -3.05, yb: -0.85, h: 1.6 }; // the spectrum's panel
 const CURVE = { x0: -0.95, x1: 1.55, h: 0.72 };
-const ROWS = [1.3, 0.2, -0.9]; // each row's baseline: long, medium, short
+const ROWS = [1.0, -0.1, -1.2]; // below the slide's title // each row's baseline: long, medium, short
 const BAR = { x0: 2.55, max: 2.2, h: 0.42 };
 const M = 220; // samples across the band, for drawing and integrating
 const SPECTRA = { lamp: 'lamp', red: 'off the red wall', green: 'off the green wall', white: 'off the white wall' } as const;
