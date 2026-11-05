@@ -48,6 +48,11 @@
  *           1368 x 1368 matrix Id - T, one colour at a time: the whole room
  *           lit. `source` (also `&source=`): ray, one sector of the lamp's
  *           opening (a narrow beam); patch, the opening glowing every way.
+ *           `&match` (Steve, 2026-11-04: "convert back to pictures", the
+ *           blurry version beside the traced one): laid out exactly as
+ *           equilibrium-room ?panels=invert&emitter, E signified by the white
+ *           rectangle in the lamp, no note; L read off the baked inverse
+ *           ((Id - T)^{-1} E, the vector on the slide before).
  *
  * The room's fill is the light arriving at each place, averaged over all
  * directions; the walls are drawn in the light leaving them. One exposure for
@@ -58,7 +63,7 @@ import * as THREE from 'three';
 import { createStage, createUI, C, flat } from '@';
 import { polyline, setPolyline } from '@/lines';
 import { label, setText } from '@/text';
-import { type Vec, v, add, sub, ROOM_HALF, ROOM_R } from '@/beamscene';
+import { type Vec, v, add, sub, ROOM_HALF, ROOM_R, SOURCE } from '@/beamscene';
 import { pieces, N, HALF, SECTORS, SOURCE_PIECE, index, buildT, sourceE, solve, castPiece, sectorOf, inverse, unpackInverses, type RGB } from '@/discrete-room';
 import { HOUSING } from '@/beamscene';
 
@@ -856,8 +861,17 @@ if (SHOW === 'matrix') {
 if (SHOW === 'solve') {
   stage.duration = 1;
   const params = { source: (q.get('source') === 'patch' ? 'patch' : 'ray') as 'ray' | 'patch' };
-  const SCALE = 0.44;
-  const PANELS = [{ x: -2.72, y: -0.15 }, { x: 2.72, y: -0.15 }];
+  const MATCH = q.has('match');
+  const SCALE = MATCH ? 0.38 : 0.44;
+  const PANELS = MATCH ? [{ x: -2.75, y: 0 }, { x: 2.75, y: 0 }] : [{ x: -2.72, y: -0.15 }, { x: 2.72, y: -0.15 }];
+  let INV: Float32Array[] | null = null;
+  if (MATCH)
+    try {
+      const res = await fetch(new URL('discrete-inverse.bin', document.baseURI));
+      if (res.ok) INV = unpackInverses(await res.arrayBuffer());
+    } catch {
+      // solve instead
+    }
   const GW = 150;
   const GH = Math.round((GW * ROOM_HALF.y) / ROOM_HALF.x);
   const groups = PANELS.map((pn) => {
@@ -877,7 +891,13 @@ if (SHOW === 'solve') {
     flat(0x8fb5d6),
   );
   arrowHead.position.set(-0.04, PANELS[0]!.y, 0);
-  stage.add(polyline([[-0.26, PANELS[0]!.y, 0], [0.12, PANELS[0]!.y, 0]], { color: 0x8fb5d6, width: 3 }), arrowHead);
+  if (MATCH) {
+    // The arrow of equilibrium-room's invert picture.
+    const x0 = PANELS[0]!.x + ROOM_HALF.x * SCALE + 0.18;
+    const x1 = PANELS[1]!.x - ROOM_HALF.x * SCALE - 0.18;
+    stage.add(polyline([[x0, 0, 0], [x1, 0, 0]], { color: C.bone, width: 3 }));
+    stage.add(polyline([[x1 - 0.14, 0.11, 0], [x1, 0, 0], [x1 - 0.14, -0.11, 0]], { color: C.bone, width: 3 }));
+  } else stage.add(polyline([[-0.26, PANELS[0]!.y, 0], [0.12, PANELS[0]!.y, 0]], { color: 0x8fb5d6, width: 3 }), arrowHead);
   const note = label('', { size: 0.16, color: C.ash, anchorX: 'center', anchorY: 'top', position: [0, PANELS[0]!.y - ROOM_HALF.y * SCALE - 0.25, 0] });
   stage.add(note);
   let dynamic: THREE.Object3D[] = [];
@@ -952,7 +972,13 @@ if (SHOW === 'solve') {
     dynamic = [];
     const E = sourceE(params.source);
     const t0 = performance.now();
-    const L = [0, 1, 2].map((c) => solve(T, c, E[c]!));
+    const L = INV
+      ? [0, 1, 2].map((c) => {
+          const out = new Float64Array(N);
+          for (let j = 0; j < N; j++) if (E[c]![j]) for (let r = 0; r < N; r++) out[r]! += INV![c]![r * N + j]! * E[c]![j]!;
+          return out;
+        })
+      : [0, 1, 2].map((c) => solve(T, c, E[c]!));
     const ms = performance.now() - t0;
     // Exposure: the solved room's light, the 70th percentile of its cells (the source's own beam is far brighter and saturates).
     const fills = [fillOf(E), fillOf(L)];
@@ -962,9 +988,25 @@ if (SHOW === 'solve') {
     const expose = lum[Math.floor(lum.length * 0.7)]! || 1;
     [E, L].forEach((F, n) => {
       const g = groups[n]!;
-      const img = fillImage(fills[n]!, expose);
-      g.add(img);
-      dynamic.push(img);
+      if (MATCH && n === 0) {
+        // E signified, not drawn: the dark room and a white rectangle in the lamp (as equilibrium-room &emitter).
+        const at = (a: number, nn: number) => add(add(SOURCE.center, SOURCE.axis, a), v(-SOURCE.axis.y, SOURCE.axis.x), nn);
+        const quad = (a0: number, a1: number, h: number, opacity: number, z: number) => {
+          const pts = [at(a0, -h), at(a1, -h), at(a1, h), at(a0, h)];
+          const geo = new THREE.BufferGeometry();
+          geo.setAttribute('position', new THREE.Float32BufferAttribute(pts.flatMap((pp) => [pp.x, pp.y, z]), 3));
+          geo.setIndex([0, 1, 2, 0, 2, 3]);
+          return new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: opacity < 1, opacity }));
+        };
+        const lamp = new THREE.Group();
+        lamp.add(quad(-0.22, 0.16, 0.86, 0.18, 0.04), quad(-0.12, 0.12, 0.72, 1, 0.05));
+        g.add(lamp);
+        dynamic.push(lamp);
+      } else {
+        const img = fillImage(fills[n]!, expose);
+        g.add(img);
+        dynamic.push(img);
+      }
       const lines = new THREE.Group();
       drawPieces(lines, (i) => {
         if (i === SOURCE_PIECE) return 0xffffff;
@@ -981,7 +1023,7 @@ if (SHOW === 'solve') {
       g.add(lines);
       dynamic.push(lines);
     });
-    setText(note, `solved by Gaussian elimination on Id − T, ${N.toLocaleString('en-US')} × ${N.toLocaleString('en-US')}, three times (once per colour): ${Math.round(ms)} ms`);
+    if (!MATCH) setText(note, `solved by Gaussian elimination on Id − T, ${N.toLocaleString('en-US')} × ${N.toLocaleString('en-US')}, three times (once per colour): ${Math.round(ms)} ms`);
   }
   show();
   ui.params.add(params, 'source', ['ray', 'patch']).onChange(show);
