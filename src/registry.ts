@@ -322,6 +322,11 @@ export const INFO: Record<string, DemoInfo> = {
     blurb: 'The beam room twice: L, the same white light along every ray, and TL, one interaction later: each wall sends out its albedo, the mirrors 0.95 white, the housing nothing. Each room filled with the average light there; the probe (follow the pointer) shows the light arriving from every direction at one place.',
     section: 'Modeling Interactions',
   },
+  'eye-response': {
+    title: 'The Eye Records a Spectrum as Three Numbers',
+    blurb: 'A spectrum from the beam room, arrows to the three cone response curves (long, medium, short), and from each curve to its bar: the spectrum integrated against that curve. Flat white light gives three equal bars.',
+    section: 'Modeling Light',
+  },
   'thin-lens-camera': {
     title: 'A Thin-Lens Camera',
     blurb: 'The pinhole camera with a lens: each pixel averages the light field over a fan of rays, one through every point of the lens, all meeting at the pixel\'s point on the focus plane. Sharp where the focus plane meets a surface, blurred elsewhere; aperture 0 is the pinhole. &rgb draws each ray in the colour of its light, without the spectrum graph.',
