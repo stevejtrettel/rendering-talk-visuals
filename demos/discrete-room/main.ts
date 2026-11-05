@@ -40,6 +40,18 @@
  *           builds with the deck's steps ({deck: 'step', shown}): 0, Id - T;
  *           1, + its inverse; 2, + E; 3, + L. Alone (not in the deck), all of
  *           it. The same magnifier, floating by the pointer.
+ *   camera  the photograph, C L (Steve, 2026-11-04: "we start with E, then we get
+ *           L, then we compute C(L), our photograph"): L across the top as a
+ *           row, its 4,248 entries; under it, lined up column for column, C,
+ *           one row per pixel and colour (CAM_PIX pixels x 3), each row a
+ *           single nonzero, the entry of L its ray reads (a pinhole camera:
+ *           the pixel's ray leaves one piece in one sector); = the column of
+ *           pixel values; and those as the photograph, a strip. The camera is
+ *           the Part II pinhole (pinhole-camera: at (-3.5, -1.3), aimed 22
+ *           degrees, sensor 1.6 wide at depth 0.8), shown in a small room
+ *           below. Builds with the deck's steps: 0, L; 1, + C; 2, + the
+ *           column; 3, + the photograph. Hover a row of C: a line up to the
+ *           entry of L it picks and across to the pixel it fills.
  *   matrix  T (its green channel; the others have the same zeros) as numbers,
  *           a window of it running past, mostly zeros; beside it the whole
  *           matrix, a dot per nonzero entry, and the window's place in it.
@@ -72,7 +84,7 @@ const HALF_W = (ORTHO_H * 16) / 9;
 const stage = createStage({ camera: 'ortho', position: [0, 0, 10], target: [0, 0, 0], orthoHeight: ORTHO_H, lights: false, controls: false });
 const ui = createUI(stage);
 const q = new URLSearchParams(location.search);
-const SHOW = (q.get('show') ?? 'solve') as 'pieces' | 'row' | 'system' | 'inverse' | 'matrix' | 'solve';
+const SHOW = (q.get('show') ?? 'solve') as 'pieces' | 'row' | 'system' | 'inverse' | 'camera' | 'matrix' | 'solve';
 const BARE = q.has('bare');
 const T = buildT();
 const P3 = (p: Vec, z = 0): [number, number, number] => [p.x, p.y, z];
@@ -625,6 +637,225 @@ if (SHOW === 'inverse') {
     else if (groups[2]!.visible && Math.abs(wx - X.E) < W && Math.abs(wy - CY) <= S / 2) vector(E, X.E, 'E');
     else if (groups[3]!.visible && Math.abs(wx - X.L) < W && Math.abs(wy - CY) <= S / 2) vector(L, X.L, 'L');
     else panel.visible = mark.visible = zt.visible = false;
+  });
+}
+
+if (SHOW === 'camera') {
+  stage.duration = 1;
+  const NN = 3 * N;
+  const CAM_PIX = 64;
+  const ROWS = 3 * CAM_PIX;
+  const TINT: RGB[] = [[0.85, 0.36, 0.28], [0.45, 0.72, 0.38], [0.42, 0.62, 0.86]];
+  const hexOfTint = (c: number, b = 1) => new THREE.Color().setRGB(...(TINT[c]!.map((t) => Math.min(1, t * b)) as RGB), THREE.LinearSRGBColorSpace).getHex();
+  // L: (Id - T)^{-1} E for the beam, off the baked inverse.
+  let INV: (Float32Array | Float64Array)[] | null = null;
+  try {
+    const res = await fetch(new URL('discrete-inverse.bin', document.baseURI));
+    if (res.ok) INV = unpackInverses(await res.arrayBuffer());
+  } catch {
+    // solve instead
+  }
+  const E = sourceE('beam');
+  const L = [0, 1, 2].map((c) => {
+    if (!INV) return solve(T, c, E[c]!);
+    const out = new Float64Array(N);
+    for (let j = 0; j < N; j++) if (E[c]![j]) for (let r = 0; r < N; r++) out[r]! += INV[c]![r * N + j]! * E[c]![j]!;
+    return out;
+  });
+  // The camera (pinhole-camera's): pixel j's ray leaves the pinhole into the room.
+  const PIN = v(-3.5, -1.3);
+  const AIM = (22 * Math.PI) / 180;
+  const DEPTH = 0.8;
+  const WIDTH = 1.6;
+  const rayOf = (j: number) => {
+    const off = -WIDTH / 2 + (WIDTH * (j + 0.5)) / CAM_PIX; // across the sensor; the image is flipped through the pinhole
+    const a = AIM + Math.atan2(off, DEPTH);
+    return v(Math.cos(a), Math.sin(a));
+  };
+  /** Each pixel's one entry of L (per colour block), or -1 if its ray meets nothing that sends light toward it. */
+  const pick = Array.from({ length: CAM_PIX }, (_, j) => {
+    const d = rayOf(j);
+    const p = castPiece(PIN, d);
+    if (p < 0) return -1;
+    const k = sectorOf(p, v(-d.x, -d.y));
+    return k < 0 ? -1 : index(p, k);
+  });
+  const pixel = (j: number): RGB => (pick[j]! < 0 ? [0, 0, 0] : [0, 1, 2].map((c) => L[c]![pick[j]!]!) as RGB);
+  // Tone as the pictures are: by brightness, keeping hue, exposure from the 90th percentile of the pixels.
+  const lumOf = (r: number, g: number, b: number) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  const ys = Array.from({ length: CAM_PIX }, (_, j) => lumOf(...pixel(j))).filter((y) => y > 0).sort((a, b) => a - b);
+  const expose = ys[Math.floor(ys.length * 0.9)]! * 1.2 || 1;
+  const toned = (rgb: RGB): RGB => {
+    const Y = lumOf(...rgb) / expose;
+    const k = Y > 0 ? (1 - Math.exp(-Y)) / Y / expose : 0;
+    return rgb.map((x) => Math.min(1, x * k)) as RGB;
+  };
+
+  // --- Layout --------------------------------------------------------------------------
+  const G = { x0: -4.7, x1: 2.45 }; // the columns of C, and L above them
+  const LROW = { y: 2.05, h: 0.3 };
+  const CM = { y1: 1.62, y0: -0.95 }; // C's rows, top to bottom
+  const PCOL = { x: 3.05, w: 0.3 };
+  const STRIP = { x: 4.45, w: 0.6 };
+  const xOfCol = (i: number) => G.x0 + ((i + 0.5) / NN) * (G.x1 - G.x0);
+  const yOfRow = (r: number) => CM.y1 - ((r + 0.5) / ROWS) * (CM.y1 - CM.y0);
+  const groups = [new THREE.Group(), new THREE.Group(), new THREE.Group(), new THREE.Group()];
+  groups.forEach((g) => stage.add(g));
+  const frame = (g: THREE.Group, x0: number, y0: number, x1: number, y1: number) =>
+    g.add(polyline([[x0, y0, 0.01], [x1, y0, 0.01], [x1, y1, 0.01], [x0, y1, 0.01], [x0, y0, 0.01]], { color: C.slate, width: 1.5 }));
+  const tex = (data: Uint8Array, w: number, h: number) => {
+    const t = new THREE.DataTexture(data, w, h, THREE.RGBAFormat);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.needsUpdate = true;
+    return t;
+  };
+  const put = (data: Uint8Array, o: number, hex: number) => {
+    data[o] = (hex >> 16) & 255;
+    data[o + 1] = (hex >> 8) & 255;
+    data[o + 2] = hex & 255;
+    data[o + 3] = 255;
+  };
+  // L, as a row (left to right: the R block, G, B).
+  {
+    const lv: number[] = [];
+    for (const f of L) for (const x of f) if (x > 0) lv.push(x);
+    lv.sort((a, b) => a - b);
+    const qL = lv[Math.floor(lv.length * 0.7)]! || 1;
+    const PX = 456;
+    const data = new Uint8Array(PX * 4);
+    for (let r = 0; r < PX; r++) {
+      const i0 = Math.floor((r * NN) / PX);
+      const i1 = Math.floor(((r + 1) * NN) / PX);
+      let acc = 0;
+      let c = 0;
+      for (let i = i0; i < i1; i++) {
+        c = Math.floor(i / N);
+        acc += L[c]![i - c * N]! / (i1 - i0);
+      }
+      put(data, r * 4, hexOfTint(c, 1.15 * (1 - Math.exp(-acc / qL))));
+    }
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(G.x1 - G.x0, LROW.h), new THREE.MeshBasicMaterial({ map: tex(data, PX, 1) }));
+    m.position.set((G.x0 + G.x1) / 2, LROW.y, 0);
+    groups[0]!.add(m);
+    frame(groups[0]!, G.x0, LROW.y - LROW.h / 2, G.x1, LROW.y + LROW.h / 2);
+  }
+  // C: a dot per row, at the column its pixel reads.
+  {
+    frame(groups[1]!, G.x0, CM.y0, G.x1, CM.y1);
+    for (let c = 0; c < 3; c++)
+      for (let j = 0; j < CAM_PIX; j++) {
+        if (pick[j]! < 0) continue;
+        const d = new THREE.Mesh(new THREE.CircleGeometry(0.022, 10), flat(hexOfTint(c, 1.1)));
+        d.position.set(xOfCol(c * N + pick[j]!), yOfRow(c * CAM_PIX + j), 0.02);
+        groups[1]!.add(d);
+      }
+  }
+  // = the column of pixel values.
+  {
+    groups[2]!.add(label('=', { size: 0.4, color: C.bone, anchorX: 'center', anchorY: 'middle', position: [(G.x1 + PCOL.x - PCOL.w / 2) / 2, (CM.y0 + CM.y1) / 2, 0] }));
+    const data = new Uint8Array(ROWS * 4);
+    for (let c = 0; c < 3; c++)
+      for (let j = 0; j < CAM_PIX; j++) {
+        const t = toned(pixel(j));
+        put(data, (ROWS - 1 - (c * CAM_PIX + j)) * 4, hexOfTint(c, Math.min(1, t[c]! / Math.max(1e-6, TINT[c]![c]!)) * 1.1));
+      }
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(PCOL.w, CM.y1 - CM.y0), new THREE.MeshBasicMaterial({ map: tex(data, 1, ROWS) }));
+    m.position.set(PCOL.x, (CM.y0 + CM.y1) / 2, 0);
+    groups[2]!.add(m);
+    frame(groups[2]!, PCOL.x - PCOL.w / 2, CM.y0, PCOL.x + PCOL.w / 2, CM.y1);
+  }
+  // The photograph: the three values of each pixel together, a strip of CAM_PIX pixels.
+  {
+    const ax0 = PCOL.x + PCOL.w / 2 + 0.12;
+    const ax1 = STRIP.x - STRIP.w / 2 - 0.12;
+    const yc = (CM.y0 + CM.y1) / 2;
+    groups[3]!.add(polyline([[ax0, yc, 0], [ax1, yc, 0]], { color: C.bone, width: 2.5 }));
+    groups[3]!.add(polyline([[ax1 - 0.1, yc + 0.08, 0], [ax1, yc, 0], [ax1 - 0.1, yc - 0.08, 0]], { color: C.bone, width: 2.5 }));
+    const data = new Uint8Array(CAM_PIX * 4);
+    for (let j = 0; j < CAM_PIX; j++) {
+      const t = toned(pixel(j));
+      put(data, (CAM_PIX - 1 - j) * 4, new THREE.Color().setRGB(...t, THREE.LinearSRGBColorSpace).getHex());
+    }
+    const strip = tex(data, 1, CAM_PIX);
+    strip.magFilter = THREE.NearestFilter;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(STRIP.w, CM.y1 - CM.y0), new THREE.MeshBasicMaterial({ map: strip }));
+    m.position.set(STRIP.x, yc, 0);
+    groups[3]!.add(m);
+    frame(groups[3]!, STRIP.x - STRIP.w / 2, CM.y0, STRIP.x + STRIP.w / 2, CM.y1);
+  }
+  // The camera in a small room, under C.
+  {
+    const RS = 0.2;
+    const at = { x: (G.x0 + G.x1) / 2, y: -2.12 };
+    const room = new THREE.Group();
+    room.position.set(at.x, at.y, 0);
+    room.scale.setScalar(RS);
+    drawPieces(room, (i) => (pieces[i]!.kind === 'matte' ? hexOf(pieces[i]!.rgb) : pieces[i]!.kind === 'mirror' ? C.bone : C.ochre), 3);
+    // The rays, each to where it lands, and the camera's box.
+    for (let j = 0; j < CAM_PIX; j += 4) {
+      const d = rayOf(j);
+      let t = 12;
+      for (let s2 = 0.05; s2 < 12; s2 += 0.05) {
+        const x = add(PIN, d, s2);
+        if (!inside(x)) {
+          t = s2;
+          break;
+        }
+      }
+      room.add(polyline([P3(PIN, 0.02), P3(add(PIN, d, t), 0.02)], { color: C.bone, width: 1, opacity: 0.45 }));
+    }
+    const back = v(-Math.cos(AIM), -Math.sin(AIM));
+    const side = v(-Math.sin(AIM), Math.cos(AIM));
+    const corner = (a: number, b: number) => P3(add(add(PIN, back, a), side, b), 0.03);
+    room.add(polyline([corner(0, -0.8), corner(0.8, -0.8), corner(0.8, 0.8), corner(0, 0.8)], { color: C.bone, width: 2 }));
+    groups[0]!.add(room);
+  }
+
+  // --- Building with the deck ------------------------------------------------------------
+  const setShown = (n: number) => groups.forEach((g, k) => (g.visible = k <= n));
+  setShown(window.parent !== window ? 0 : 3);
+  window.addEventListener('message', (e) => {
+    const d = e.data as { deck?: string; shown?: number } | null;
+    if (d?.deck === 'step' && typeof d.shown === 'number') setShown(d.shown);
+  });
+  window.parent?.postMessage({ demo: 'ready' }, '*');
+
+  // --- Hover a row of C: up to its entry of L, across to its pixel ---------------------------
+  const up = polyline([[0, 0, 0], [0, 0, 0]], { color: C.bone, width: 1.5 });
+  const across = polyline([[0, 0, 0], [0, 0, 0]], { color: C.bone, width: 1.5 });
+  const rowBand = polyline([[0, 0, 0], [0, 0, 0]], { color: C.rust, width: 1.5, opacity: 0.8 });
+  const info = label('', { size: 0.14, color: C.bone, anchorX: 'left', anchorY: 'bottom', position: [0, 0, 0.3] });
+  stage.add(up, across, rowBand, info);
+  const hide = () => (up.visible = across.visible = rowBand.visible = info.visible = false);
+  hide();
+  const canvas = stage.renderer.domElement;
+  canvas.addEventListener('pointermove', (e) => {
+    const rr = canvas.getBoundingClientRect();
+    const wx = (((e.clientX - rr.left) / rr.width) * 2 - 1) * HALF_W;
+    const wy = -(((e.clientY - rr.top) / rr.height) * 2 - 1) * ORTHO_H;
+    if (!groups[1]!.visible || wx < G.x0 || wx > G.x1 || wy < CM.y0 || wy > CM.y1) return hide();
+    const r = Math.max(0, Math.min(ROWS - 1, Math.floor(((CM.y1 - wy) / (CM.y1 - CM.y0)) * ROWS)));
+    const c = Math.floor(r / CAM_PIX);
+    const j = r - c * CAM_PIX;
+    const y = yOfRow(r);
+    setPolyline(rowBand, [[G.x0, y, 0.03], [G.x1, y, 0.03]]);
+    rowBand.visible = true;
+    if (pick[j]! < 0) {
+      up.visible = across.visible = false;
+      info.visible = true;
+      info.position.set(G.x0 + 0.05, y + 0.04, 0.3);
+      setText(info, `pixel ${j + 1} (${'RGB'[c]}): its ray meets nothing lit; the row is all zeros`);
+      return;
+    }
+    const x = xOfCol(c * N + pick[j]!);
+    setPolyline(up, [[x, y, 0.03], [x, LROW.y - LROW.h / 2, 0.03]]);
+    setPolyline(across, [[x, y, 0.03], [PCOL.x - PCOL.w / 2, y, 0.03]]);
+    up.visible = across.visible = groups[0]!.visible;
+    across.visible = groups[2]!.visible;
+    info.visible = true;
+    info.position.set(Math.min(x + 0.08, G.x1 - 3.2), y + 0.04, 0.3);
+    const val = L[c]![pick[j]!]!;
+    setText(info, `pixel ${j + 1} (${'RGB'[c]}): one entry, 1, in column ${c * N + pick[j]! + 1} of ${NN.toLocaleString('en-US')}; reads L there: ${val < 0.001 ? val.toExponential(1) : val.toFixed(4)}`);
   });
 }
 
