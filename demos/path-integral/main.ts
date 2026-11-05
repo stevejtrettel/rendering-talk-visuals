@@ -53,6 +53,20 @@
  * of the ceiling, so its cone of rays straddles a corner of the lamp and only
  * part of the lens sees the light (in focus, the region would be all of A or
  * none of it).
+ *
+ * ?space=1 (Steve, 2026-11-05: "I'd go with the second approach of things laid
+ * out together, as long as the integrand looks a bit complicated still"; "show a
+ * little schematic of paths, and then path space with a function over it"): the
+ * paths of C T E. First some of them in the room (lens -> one bounce at x_1 ->
+ * a point of the lamp; ochre if the line to the lamp is clear). Then the room
+ * unfolds into a net about its floor (back wall behind, red and green to the
+ * sides, the ceiling with the lamp past the red wall), the viewer rising above
+ * it: the paths grouped by the surface they bounce off. Then a graph rises over
+ * the net: at each point the lamp's light arriving there times the surface's
+ * colour (36 lamp points, each checked for a clear line), with the heights
+ * compressed by a power 0.6 so the walls show beside the bright floor. A
+ * schematic, not the literal 4-dimensional domain; the balls' own bounce points
+ * are left out.
  */
 
 import * as THREE from 'three';
@@ -64,8 +78,9 @@ const q = new URLSearchParams(location.search);
 const N = Math.max(0, Math.min(2, Number(q.get('n') ?? 0)));
 const WALK = q.has('walk');
 const SPACE = q.has('space');
+const SPACE_N = Number(q.get('space') || 0);
 
-const stage = SPACE
+const stage = SPACE && SPACE_N === 0
   ? createStage({ camera: 'persp', position: [0.9, 3.1, 17.5], target: [1.0, 2.3, 1.5], fov: 35, lights: false, controls: false })
   : createStage({ camera: 'persp', position: [-0.4, 3.0, 15.5], target: [-1.5, 2.0, 1.5], fov: 43, lights: false, controls: false });
 const scene = stage.scene;
@@ -84,11 +99,13 @@ const WHITE = 0xc2b9af;
 const RED = 0xa61a14;
 const GREEN = 0x2a7a30;
 /** A wall seen only from inside the box: a plane centred at c, normal n into the room. */
+const roomParts: THREE.Object3D[] = []; // the box as drawn (?space=1 unfolds its own copy)
 function wall(c: [number, number, number], n: THREE.Vector3, color: number) {
   const m = new THREE.Mesh(new THREE.PlaneGeometry(4, 4), matte(color, { side: THREE.FrontSide }));
   m.position.set(...c);
   m.lookAt(m.position.clone().add(n));
   scene.add(m);
+  roomParts.push(m);
 }
 wall([0, 0, 0], new THREE.Vector3(0, 1, 0), WHITE);
 wall([0, 4, 0], new THREE.Vector3(0, -1, 0), WHITE);
@@ -96,9 +113,15 @@ wall([0, 2, -2], new THREE.Vector3(0, 0, 1), WHITE);
 wall([-2, 2, 0], new THREE.Vector3(1, 0, 0), RED);
 wall([2, 2, 0], new THREE.Vector3(-1, 0, 0), GREEN);
 // The open front's rim, so the box reads as a box.
-scene.add(polyline([[-2, 0, 2], [-2, 4, 2], [2, 4, 2], [2, 0, 2], [-2, 0, 2]], { color: C.slate, width: 2 }));
-scene.add(polyline([[-2, 0, -2], [-2, 4, -2], [2, 4, -2], [2, 0, -2], [-2, 0, -2]], { color: C.slateDeep, width: 1.5 }));
-for (const [x, y] of [[-2, 0], [-2, 4], [2, 4], [2, 0]] as const) scene.add(polyline([[x, y, -2], [x, y, 2]], { color: C.slateDeep, width: 1.5 }));
+for (const pts of [
+  [[-2, 0, 2], [-2, 4, 2], [2, 4, 2], [2, 0, 2], [-2, 0, 2]],
+  [[-2, 0, -2], [-2, 4, -2], [2, 4, -2], [2, 0, -2], [-2, 0, -2]],
+  ...([[-2, 0], [-2, 4], [2, 4], [2, 0]] as const).map(([x, y]) => [[x, y, -2], [x, y, 2]]),
+] as [number, number, number][][]) {
+  const l = polyline(pts, { color: pts.length === 5 && pts[0]![2] === 2 ? C.slate : C.slateDeep, width: pts.length === 5 && pts[0]![2] === 2 ? 2 : 1.5 });
+  scene.add(l);
+  roomParts.push(l);
+}
 
 const lamp = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 1.2), glow(0xfff3e0, 2.2));
 lamp.rotation.x = Math.PI / 2;
@@ -189,6 +212,7 @@ function name(text: string, sub: string, p: THREE.Vector3, dx: number, dy: numbe
   const main = label(text, { size, color, anchorX: sub ? 'right' : 'center', anchorY: 'middle' });
   g.add(main);
   if (sub) g.add(label(sub, { size: size * 0.62, color, anchorX: 'left', anchorY: 'middle', position: [0.01, -size * 0.28, 0] }));
+  g.userData.label = true;
   scene.add(g);
   return main;
 }
@@ -249,6 +273,7 @@ function rng32(seed: number) {
 }
 
 if (WALK) walkMode();
+else if (SPACE && SPACE_N === 1) netMode();
 else if (SPACE) spaceMode();
 else fixedPath();
 
@@ -448,6 +473,192 @@ function spaceMode() {
     (block.material as THREE.MeshStandardMaterial).opacity = 0.55 * g;
     (rim.material as unknown as { opacity: number }).opacity = g;
     aLabel.visible = u >= T2;
+  });
+}
+
+// --- The space of paths of C T E: the room unfolded, paths grouped by where they bounce ---
+function netMode() {
+  // The box's five faces, unfolded about the floor into a net on the plane y = 0:
+  // the floor in the middle, the back wall behind it, the red and green walls to
+  // either side, the ceiling (and the lamp) beyond the red wall. Each face is a
+  // pivot on its hinge; folded, they are the room.
+  type Face = {
+    name: string; color: number; albedo: number;
+    x0: number; x1: number; z0: number; z1: number; // its rectangle in the net
+    room: (x: number, z: number) => V; n: V; // the net point's place in the room, and the normal there
+    pivot: THREE.Group; hinge: V; axis: 'x' | 'z'; fold: number; parent?: string;
+  };
+  const lum = (c: number) => {
+    const col = new THREE.Color(c);
+    return 0.2126 * col.r + 0.7152 * col.g + 0.0722 * col.b;
+  };
+  const faces: Face[] = [
+    { name: 'floor', color: WHITE, albedo: lum(WHITE), x0: -2, x1: 2, z0: -2, z1: 2, room: (x, z) => new THREE.Vector3(x, 0, z), n: new THREE.Vector3(0, 1, 0), pivot: new THREE.Group(), hinge: new THREE.Vector3(0, 0, 0), axis: 'x', fold: 0 },
+    { name: 'back', color: WHITE, albedo: lum(WHITE), x0: -2, x1: 2, z0: -6, z1: -2, room: (x, z) => new THREE.Vector3(x, -2 - z, -2), n: new THREE.Vector3(0, 0, 1), pivot: new THREE.Group(), hinge: new THREE.Vector3(0, 0, -2), axis: 'x', fold: Math.PI / 2 },
+    { name: 'red', color: RED, albedo: lum(RED), x0: -6, x1: -2, z0: -2, z1: 2, room: (x, z) => new THREE.Vector3(-2, -2 - x, z), n: new THREE.Vector3(1, 0, 0), pivot: new THREE.Group(), hinge: new THREE.Vector3(-2, 0, 0), axis: 'z', fold: -Math.PI / 2 },
+    { name: 'green', color: GREEN, albedo: lum(GREEN), x0: 2, x1: 6, z0: -2, z1: 2, room: (x, z) => new THREE.Vector3(2, x - 2, z), n: new THREE.Vector3(-1, 0, 0), pivot: new THREE.Group(), hinge: new THREE.Vector3(2, 0, 0), axis: 'z', fold: Math.PI / 2 },
+    { name: 'ceiling', color: WHITE, albedo: lum(WHITE), x0: -10, x1: -6, z0: -2, z1: 2, room: (x, z) => new THREE.Vector3(-8 - x, 4, z), n: new THREE.Vector3(0, -1, 0), pivot: new THREE.Group(), hinge: new THREE.Vector3(-6, 0, 0), axis: 'z', fold: -Math.PI / 2, parent: 'red' },
+  ];
+  const byName = Object.fromEntries(faces.map((f) => [f.name, f]));
+  for (const f of faces) {
+    const par = f.parent ? byName[f.parent]! : null;
+    f.pivot.position.copy(par ? f.hinge.clone().sub(par.hinge) : f.hinge);
+    (par ? par.pivot : scene).add(f.pivot);
+  }
+
+  // The integrand, for the picture: the lamp's light arriving at the bounce point
+  // x_1, times the surface's colour (summed over where on the lamp the path
+  // ends, by a 6 x 6 grid of lamp points, each checked for a clear line).
+  const LS = 6;
+  const lampPts: V[] = [];
+  for (let i = 0; i < LS; i++) for (let j = 0; j < LS; j++) lampPts.push(new THREE.Vector3(-0.6 + (1.2 * (i + 0.5)) / LS, 4, -0.6 + (1.2 * (j + 0.5)) / LS));
+  function light(p: V, n: V): number {
+    let sum = 0;
+    const o = p.clone().addScaledVector(n, 1e-3);
+    for (const L of lampPts) {
+      const w = L.clone().sub(p);
+      const r2 = w.lengthSq();
+      w.normalize();
+      const c1 = w.dot(n);
+      const cL = w.y; // the lamp faces down
+      if (c1 <= 0 || cL <= 0) continue;
+      const h = cast(o, w);
+      if (!h || !h.lamp) continue;
+      sum += (c1 * cL) / r2;
+    }
+    return (sum * 1.44) / lampPts.length / Math.PI;
+  }
+  const insideBall = (p: V) => [white, blue].some((b) => p.distanceTo(b.position) < (b === white ? 0.8 : 0.55));
+  const G = 72;
+  const heights = faces.map((f) => {
+    const hs = new Float32Array((G + 1) * (G + 1));
+    for (let i = 0; i <= G; i++)
+      for (let j = 0; j <= G; j++) {
+        const x = f.x0 + ((f.x1 - f.x0) * j) / G;
+        const z = f.z0 + ((f.z1 - f.z0) * i) / G;
+        const p = f.room(x, z);
+        hs[i * (G + 1) + j] = insideBall(p) ? 0 : f.albedo * light(p, f.n);
+      }
+    return hs;
+  });
+  const MAXH = Math.max(...heights.map((h) => Math.max(...h)));
+  const HWORLD = 1.7; // the tallest point of the graph, in world units
+  // Drawn with its heights compressed (a power 0.6), so the dim walls still show
+  // their shape beside the bright floor: a schematic, not to scale.
+  const shape = (h: number) => Math.pow(h / MAXH, 0.6) * HWORLD;
+  const meshes = faces.map((f, k) => {
+    const geo = new THREE.PlaneGeometry(f.x1 - f.x0, f.z1 - f.z0, G, G);
+    geo.rotateX(-Math.PI / 2); // into the plane, facing up
+    const pos = geo.attributes.position as THREE.BufferAttribute;
+    // PlaneGeometry rows run from +z to -z after the rotation; index by position instead.
+    for (let v = 0; v < pos.count; v++) {
+      const lx = pos.getX(v) + (f.x0 + f.x1) / 2;
+      const lz = pos.getZ(v) + (f.z0 + f.z1) / 2;
+      const j = Math.round(((lx - f.x0) / (f.x1 - f.x0)) * G);
+      const i = Math.round(((lz - f.z0) / (f.z1 - f.z0)) * G);
+      pos.setY(v, shape(heights[k]![i * (G + 1) + j]!));
+    }
+    geo.computeVertexNormals();
+    const m = new THREE.Mesh(geo, matte(f.color, { side: THREE.DoubleSide }));
+    const par = f.parent ? byName[f.parent]! : null;
+    const origin = par ? par.hinge.clone().add(f.pivot.position) : f.hinge;
+    m.position.set((f.x0 + f.x1) / 2 - origin.x, 0, (f.z0 + f.z1) / 2 - origin.z);
+    m.scale.y = 0.001;
+    f.pivot.add(m);
+    // Its edge, so the faces read as separate groups once flat.
+    const e = polyline([[f.x0, 0.01, f.z0], [f.x1, 0.01, f.z0], [f.x1, 0.01, f.z1], [f.x0, 0.01, f.z1], [f.x0, 0.01, f.z0]].map(([x, y, z]) => [x! - origin.x, y!, z! - origin.z] as [number, number, number]), { color: C.slate, width: 1.5 });
+    f.pivot.add(e);
+    return m;
+  });
+  // The lamp rides on the ceiling.
+  const ceil = byName.ceiling!;
+  const ceilOrigin = byName.red!.hinge.clone().add(ceil.pivot.position);
+  const lampFlat = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 1.2), glow(0xfff3e0, 2.2));
+  lampFlat.rotation.x = -Math.PI / 2;
+  lampFlat.position.set(-8 - ceilOrigin.x, 0.02, 0 - ceilOrigin.z);
+  ceil.pivot.add(lampFlat);
+  for (const o of roomParts) o.visible = false;
+  lamp.visible = false;
+
+  // Paths from the camera that bounce once: a on the lens, a ray into the box to
+  // x_1 (on a wall or the floor), then on toward a point of the lamp.
+  const rnd = rng32(11);
+  const toNet = (p: V): { f: Face; x: number; z: number } | null => {
+    if (p.y < 1e-3) return { f: byName.floor!, x: p.x, z: p.z };
+    if (p.z < -2 + 1e-3) return { f: byName.back!, x: p.x, z: -2 - p.y };
+    if (p.x < -2 + 1e-3) return { f: byName.red!, x: -2 - p.y, z: p.z };
+    if (p.x > 2 - 1e-3) return { f: byName.green!, x: p.y + 2, z: p.z };
+    return null;
+  };
+  type Path = { a: V; x1: V; end: V; lamp: boolean; net: { f: Face; x: number; z: number } };
+  const paths: Path[] = [];
+  while (paths.length < 16) {
+    const r = LENS_R * Math.sqrt(rnd());
+    const phi = 2 * Math.PI * rnd();
+    const a = lensC.clone().addScaledVector(right, r * Math.cos(phi)).addScaledVector(up, r * Math.sin(phi));
+    const target = new THREE.Vector3(-1.9 + 3.8 * rnd(), 0.1 + 3.8 * rnd(), -1.9 + 3.8 * rnd());
+    const h = cast(a, target.clone().sub(a).normalize());
+    if (!h || h.lamp) continue;
+    const net = toNet(h.p);
+    if (!net) continue; // a ball, or the ceiling: left out of this picture
+    if (net.f.n.dot(target.clone().sub(a)) >= 0) continue; // the outside of a wall
+    const L = new THREE.Vector3(-0.6 + 1.2 * rnd(), 4, -0.6 + 1.2 * rnd());
+    const w = L.clone().sub(h.p).normalize();
+    const h2 = cast(h.p.clone().addScaledVector(h.n, 1e-3), w);
+    paths.push({ a, x1: h.p, end: h2 ? h2.p : L, lamp: !!h2?.lamp, net });
+  }
+  const pathLines = paths.map((p) => {
+    const l = polyline([p.a, p.x1, p.end], { color: p.lamp ? C.ochre : C.slate, width: p.lamp ? 3 : 2, opacity: p.lamp ? 0.95 : 0.6 });
+    scene.add(l);
+    return l;
+  });
+  // Each path's bounce point, riding on its face; it rises with the graph.
+  const pathDots = paths.map((p) => {
+    const f = p.net.f;
+    const par = f.parent ? byName[f.parent]! : null;
+    const origin = par ? par.hinge.clone().add(f.pivot.position) : f.hinge;
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.09, 20, 10), flat(p.lamp ? C.ochre : C.ash));
+    m.renderOrder = 6;
+    m.position.set(p.net.x - origin.x, 0.03, p.net.z - origin.z);
+    f.pivot.add(m);
+    const k = faces.indexOf(f);
+    const i = Math.round(((p.net.z - f.z0) / (f.z1 - f.z0)) * G);
+    const j = Math.round(((p.net.x - f.x0) / (f.x1 - f.x0)) * G);
+    return { m, h: shape(heights[k]![i * (G + 1) + j]!) };
+  });
+
+  // Timeline, and the viewer's move from the room to above the net.
+  const T_P = 0.22;
+  const T0 = 0.5;
+  const T1 = T0 + paths.length * T_P + 1.2; // unfold
+  const T2 = T1 + 3.2;
+  const T3 = T2 + 2.2; // the graph is up
+  stage.duration = T3 + 5;
+  const ease = (x: number) => {
+    const u = Math.min(Math.max(x, 0), 1);
+    return u * u * (3 - 2 * u);
+  };
+  const P1 = stage.camera.position.clone();
+  const L1 = new THREE.Vector3(-1.5, 2.0, 1.5);
+  const P2 = new THREE.Vector3(-2, 13.5, 9.5);
+  const L2 = new THREE.Vector3(-2, 0.2, -1.4);
+  const look = new THREE.Vector3();
+  stage.frame((t) => {
+    const u = t % stage.duration;
+    pathLines.forEach((l, i) => (l.visible = u >= T0 + i * T_P && u < T1 + 0.4));
+    pathDots.forEach((d, i) => (d.m.visible = u >= T0 + i * T_P));
+    const m = ease((u - T1) / (T2 - T1));
+    for (const f of faces) f.pivot.rotation[f.axis] = f.fold * (1 - m);
+    const hide = u >= T1;
+    cam.visible = !hide;
+    white.visible = blue.visible = !hide;
+    for (const o of scene.children) if ((o as { userData: { label?: boolean } }).userData.label) o.visible = !hide;
+    stage.camera.position.copy(P1).lerp(P2, m);
+    look.copy(L1).lerp(L2, m);
+    stage.camera.lookAt(look);
+    const rise = ease((u - T2) / (T3 - T2));
+    for (const mesh of meshes) mesh.scale.y = Math.max(0.001, rise);
+    pathDots.forEach((d) => (d.m.position.y = 0.03 + d.h * rise));
   });
 }
 
