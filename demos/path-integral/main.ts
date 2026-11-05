@@ -816,7 +816,7 @@ function walkMode() {
   }
   // ?buckets: N1 walks one at a time (slow, then faster), then RAPID walks fired at
   // RATE a second, each flashing whole for LIFE seconds.
-  const N1 = 30;
+  const N1 = 18;
   const RAPID = 1800;
   const RATE = 60;
   const LIFE = 0.22;
@@ -832,9 +832,9 @@ function walkMode() {
 
   // Timing: each segment of walk w grows in seg[w] seconds; the walk then holds
   // hold[w]. With ?buckets the first few are slow, then they speed up.
-  const SLOW = 6;
-  const seg = walks.map((_, i) => (BUCKETS ? Math.max(0.016, 0.4 * Math.pow(0.84, Math.max(0, i - SLOW))) : 0.4));
-  const hold = walks.map((_, i) => (BUCKETS ? Math.max(0.03, 1.6 * Math.pow(0.8, Math.max(0, i - SLOW))) : 1.6));
+  const SLOW = 3;
+  const seg = walks.map((_, i) => (BUCKETS ? Math.max(0.016, 0.4 * Math.pow(0.78, Math.max(0, i - SLOW))) : 0.4));
+  const hold = walks.map((_, i) => (BUCKETS ? Math.max(0.03, 1.6 * Math.pow(0.72, Math.max(0, i - SLOW))) : 1.6));
   const starts: number[] = [];
   const doneAt: number[] = [];
   const ONE = BUCKETS ? N1 : COUNT; // walks shown one at a time
