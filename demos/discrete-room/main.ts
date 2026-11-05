@@ -726,8 +726,7 @@ if (SHOW === 'camera' || SHOW === 'cmatrix') {
   const G = CMAT ? { x0: -4.9, x1: 4.9 } : { x0: -5.0, x1: 0.75 }; // C's columns
   const CM = CMAT ? { y1: 1.75, y0: -1.75 } : { y1: 0.8, y0: -0.8 }; // C's rows, top to bottom
   const LCOL = { x: 1.3, w: 0.3, y1: 2.45, y0: -2.45 }; // L, a tall column beside C
-  const PCOL = { x: 2.55, w: 0.3 }; // C L, as tall as C
-  const STRIP = { x: 3.85, w: 0.6 };
+  const PCOL = { x: 2.85, w: 0.75 }; // C L, drawn as the image itself: its pixels in their colours, as tall as C
   const yOfL = (i: number) => LCOL.y1 - ((i + 0.5) / NN) * (LCOL.y1 - LCOL.y0);
   const xOfCol = (i: number) => G.x0 + ((i + 0.5) / NN) * (G.x1 - G.x0);
   const yOfRow = (r: number) => CM.y1 - ((r + 0.5) / ROWS) * (CM.y1 - CM.y0);
@@ -782,42 +781,23 @@ if (SHOW === 'camera' || SHOW === 'cmatrix') {
           groups[1]!.add(d);
         }
   }
-  // = the column of pixel values.
+  // = C L, drawn as what it is: the image, each pixel's three numbers as its colour (Steve: "just draw CL as the
+  // correctly coloured nice pixel image").
+  const yOfPix = (j: number) => CM.y1 - ((j + 0.5) / CAM_PIX) * (CM.y1 - CM.y0);
   {
     groups[2]!.add(label('=', { size: 0.4, color: C.bone, anchorX: 'center', anchorY: 'middle', position: [(LCOL.x + LCOL.w / 2 + PCOL.x - PCOL.w / 2) / 2, (CM.y0 + CM.y1) / 2, 0] }));
-    const data = new Uint8Array(ROWS * 4);
-    for (let c = 0; c < 3; c++)
-      for (let j = 0; j < CAM_PIX; j++) {
-        const t = toned(pixel(j));
-        put(data, (ROWS - 1 - (c * CAM_PIX + j)) * 4, hexOfTint(c, Math.min(1, t[c]! / Math.max(1e-6, TINT[c]![c]!)) * 1.1));
-      }
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(PCOL.w, CM.y1 - CM.y0), new THREE.MeshBasicMaterial({ map: tex(data, 1, ROWS) }));
+    const data = new Uint8Array(CAM_PIX * 4);
+    for (let j = 0; j < CAM_PIX; j++) put(data, (CAM_PIX - 1 - j) * 4, new THREE.Color().setRGB(...toned(pixel(j)), THREE.LinearSRGBColorSpace).getHex());
+    const t = tex(data, 1, CAM_PIX);
+    t.magFilter = THREE.NearestFilter;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(PCOL.w, CM.y1 - CM.y0), new THREE.MeshBasicMaterial({ map: t }));
     m.position.set(PCOL.x, (CM.y0 + CM.y1) / 2, 0);
     groups[2]!.add(m);
     frame(groups[2]!, PCOL.x - PCOL.w / 2, CM.y0, PCOL.x + PCOL.w / 2, CM.y1);
   }
-  // The photograph: the three values of each pixel together, a strip of CAM_PIX pixels.
-  {
-    const ax0 = PCOL.x + PCOL.w / 2 + 0.12;
-    const ax1 = STRIP.x - STRIP.w / 2 - 0.12;
-    const yc = (CM.y0 + CM.y1) / 2;
-    groups[3]!.add(polyline([[ax0, yc, 0], [ax1, yc, 0]], { color: C.bone, width: 2.5 }));
-    groups[3]!.add(polyline([[ax1 - 0.1, yc + 0.08, 0], [ax1, yc, 0], [ax1 - 0.1, yc - 0.08, 0]], { color: C.bone, width: 2.5 }));
-    const data = new Uint8Array(CAM_PIX * 4);
-    for (let j = 0; j < CAM_PIX; j++) {
-      const t = toned(pixel(j));
-      put(data, (CAM_PIX - 1 - j) * 4, new THREE.Color().setRGB(...t, THREE.LinearSRGBColorSpace).getHex());
-    }
-    const strip = tex(data, 1, CAM_PIX);
-    strip.magFilter = THREE.NearestFilter;
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(STRIP.w, CM.y1 - CM.y0), new THREE.MeshBasicMaterial({ map: strip }));
-    m.position.set(STRIP.x, yc, 0);
-    groups[3]!.add(m);
-    frame(groups[3]!, STRIP.x - STRIP.w / 2, CM.y0, STRIP.x + STRIP.w / 2, CM.y1);
-  }
-  // --- Building with the deck: on arrival L and C; then the column; then the image. Alone: C only (cmatrix). ---
+  // --- Building with the deck: on arrival L and C; then = the image. Alone: C only (cmatrix). ---
   const setShown = (n: number) => groups.forEach((g, k) => (g.visible = CMAT ? k === 1 : k <= n + 1));
-  setShown(window.parent !== window ? 0 : 2);
+  setShown(window.parent !== window ? 0 : 1);
   window.addEventListener('message', (e) => {
     const d = e.data as { deck?: string; shown?: number } | null;
     if (d?.deck === 'step' && typeof d.shown === 'number') setShown(d.shown);
@@ -830,7 +810,7 @@ if (SHOW === 'camera' || SHOW === 'cmatrix') {
   if (!CMAT) {
     // Up from each of its entries to the light it reads, across to the pixel it fills.
     const ups = new THREE.Group();
-    const acrossLine = polyline([[0, 0, 0], [0, 0, 0]], { color: C.bone, width: 1.5 });
+    const acrossLine = polyline(Array.from({ length: 5 }, () => [0, 0, 0] as [number, number, number]), { color: C.bone, width: 2.5 });
     const rowBand = polyline([[0, 0, 0], [0, 0, 0]], { color: C.rust, width: 1.5, opacity: 0.8 });
     const info = label('', { size: 0.14, color: C.bone, anchorX: 'left', anchorY: 'bottom', position: [0, 0, 0.3] });
     stage.add(ups, acrossLine, rowBand, info);
@@ -852,12 +832,12 @@ if (SHOW === 'camera' || SHOW === 'cmatrix') {
         const yl = yOfL(c * N + col);
         // The entry of C, to the entry of L it multiplies, to the pixel the products add into.
         ups.add(polyline([[x, y, 0.03], [LCOL.x - LCOL.w / 2, yl, 0.03]], { color: C.bone, width: 1.2 }));
-        ups.add(polyline([[LCOL.x + LCOL.w / 2, yl, 0.03], [PCOL.x - PCOL.w / 2, y, 0.03]], { color: C.bone, width: 1.2, opacity: 0.7 }));
+        if (groups[2]!.visible) ups.add(polyline([[LCOL.x + LCOL.w / 2, yl, 0.03], [PCOL.x - PCOL.w / 2, yOfPix(j), 0.03]], { color: C.bone, width: 1.2, opacity: 0.7 }));
         const mk = new THREE.Mesh(new THREE.PlaneGeometry(LCOL.w + 0.08, 0.035), flat(C.bone));
         mk.position.set(LCOL.x, yl, 0.04);
         ups.add(mk);
       }
-      setPolyline(acrossLine, [[G.x0, y, 0.03], [G.x0, y, 0.03]]);
+      setPolyline(acrossLine, [[PCOL.x - PCOL.w / 2, yOfPix(j) + 0.5 * ((CM.y1 - CM.y0) / CAM_PIX), 0.05], [PCOL.x + PCOL.w / 2, yOfPix(j) + 0.5 * ((CM.y1 - CM.y0) / CAM_PIX), 0.05], [PCOL.x + PCOL.w / 2, yOfPix(j) - 0.5 * ((CM.y1 - CM.y0) / CAM_PIX), 0.05], [PCOL.x - PCOL.w / 2, yOfPix(j) - 0.5 * ((CM.y1 - CM.y0) / CAM_PIX), 0.05], [PCOL.x - PCOL.w / 2, yOfPix(j) + 0.5 * ((CM.y1 - CM.y0) / CAM_PIX), 0.05]]); // the pixel, outlined
       rowBand.visible = ups.visible = info.visible = true;
       acrossLine.visible = groups[2]!.visible;
       info.position.set(G.x0 + 0.05, CM.y1 + 0.12, 0.3);
