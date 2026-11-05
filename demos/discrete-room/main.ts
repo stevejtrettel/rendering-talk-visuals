@@ -7,6 +7,16 @@
  *           to choose) its circle of direction sectors: the half that leaves
  *           the surface lit, the half into it dark. The count below: pieces x
  *           outgoing sectors x 3 colours, the size of a light field.
+ *           `&bare`: just the room in pieces, no sectors, no count, no hover
+ *           (a small picture for the idea slide).
+ *   row     T one row at a time (Steve, 2026-11-04: the matrix slide "right
+ *           now is totally incomprehensible"): left, the room, one piece and
+ *           one direction leaving it (the row), and lines back to every piece
+ *           its light comes from (the row's nonzero entries); right, the whole
+ *           matrix, a faint dot per nonzero, that row marked and its entries
+ *           lit. It steps through a matte wall (light from everywhere it can
+ *           see: many entries), a mirror (light from one direction: an entry or
+ *           two) and the ceiling.
  *   matrix  T (its green channel; the others have the same zeros) as numbers,
  *           a window of it running past, mostly zeros; beside it the whole
  *           matrix, a dot per nonzero entry, and the window's place in it.
@@ -34,7 +44,8 @@ const HALF_W = (ORTHO_H * 16) / 9;
 const stage = createStage({ camera: 'ortho', position: [0, 0, 10], target: [0, 0, 0], orthoHeight: ORTHO_H, lights: false, controls: false });
 const ui = createUI(stage);
 const q = new URLSearchParams(location.search);
-const SHOW = (q.get('show') ?? 'solve') as 'pieces' | 'matrix' | 'solve';
+const SHOW = (q.get('show') ?? 'solve') as 'pieces' | 'row' | 'matrix' | 'solve';
+const BARE = q.has('bare');
 const T = buildT();
 const P3 = (p: Vec, z = 0): [number, number, number] => [p.x, p.y, z];
 const inside = (p: Vec) => {
@@ -111,6 +122,7 @@ if (SHOW === 'pieces') {
     rimPts.push(rimPts[0]!);
     setPolyline(rim, rimPts);
   }
+  if (BARE) fan.visible = mark.visible = false;
   let chosen = 0;
   pieces.forEach((p, i) => {
     const m = pieces[chosen]!;
@@ -118,9 +130,12 @@ if (SHOW === 'pieces') {
   });
   choose(chosen);
   const nPieces = pieces.length;
-  stage.add(label(`${nPieces} pieces  ×  ${HALF} sectors leaving each  ×  3 colours  =  ${(nPieces * HALF * 3).toLocaleString('en-US')} numbers`, { size: 0.24, color: C.bone, anchorX: 'center', anchorY: 'top', position: [0, -2.62, 0] }));
+  if (!BARE) {
+    stage.add(label(`L:  ${nPieces} pieces  ×  ${HALF} directions leaving each  ×  3 colours  =  ${(nPieces * HALF * 3).toLocaleString('en-US')} numbers`, { size: 0.22, color: C.bone, anchorX: 'center', anchorY: 'top', position: [0, -2.3, 0] }));
+    stage.add(label(`T:  three ${N.toLocaleString('en-US')} × ${N.toLocaleString('en-US')} matrices, one per colour (the colours never mix)`, { size: 0.22, color: C.bone, anchorX: 'center', anchorY: 'top', position: [0, -2.65, 0] }));
+  }
   const canvas = stage.renderer.domElement;
-  canvas.addEventListener('pointermove', (e) => {
+  if (!BARE) canvas.addEventListener('pointermove', (e) => {
     const r = canvas.getBoundingClientRect();
     const wx = (((e.clientX - r.left) / r.width) * 2 - 1) * HALF_W;
     const wy = -(((e.clientY - r.top) / r.height) * 2 - 1) * ORTHO_H;
@@ -142,6 +157,125 @@ if (SHOW === 'pieces') {
     if (best >= 0 && best !== chosen) {
       chosen = best;
       choose(best);
+    }
+  });
+}
+
+if (SHOW === 'row') {
+  const SCALE = 0.45;
+  const ROOM_AT = { x: -2.75, y: -0.05 };
+  const room = new THREE.Group();
+  room.position.set(ROOM_AT.x, ROOM_AT.y, 0);
+  room.scale.setScalar(SCALE);
+  stage.add(room);
+  drawPieces(room, () => C.slate, 4);
+  // The matrix: a faint dot per nonzero entry.
+  const S = 456;
+  const f = N / S;
+  const data = new Uint8Array(S * S * 4);
+  for (let i = 0; i < S * S; i++) data[i * 4 + 3] = 255;
+  for (let r = 0; r < N; r++)
+    for (const c of T.cols[r]!) {
+      const o = ((S - 1 - Math.floor(r / f)) * S + Math.floor(c / f)) * 4;
+      data[o] = 92;
+      data[o + 1] = 104;
+      data[o + 2] = 116;
+    }
+  const tex = new THREE.DataTexture(data, S, S, THREE.RGBAFormat);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  const M = { cx: 2.75, cy: -0.05, s: 4.3 };
+  const mat = new THREE.Mesh(new THREE.PlaneGeometry(M.s, M.s), new THREE.MeshBasicMaterial({ map: tex }));
+  mat.position.set(M.cx, M.cy, 0);
+  stage.add(mat);
+  const ML = M.cx - M.s / 2;
+  const MT = M.cy + M.s / 2;
+  stage.add(polyline([[ML, MT, 0.01], [ML + M.s, MT, 0.01], [ML + M.s, MT - M.s, 0.01], [ML, MT - M.s, 0.01], [ML, MT, 0.01]], { color: C.slate, width: 1.5 }));
+  const nnz = T.cols.reduce((a, c) => a + c.length, 0);
+  stage.add(label(`T: ${N.toLocaleString('en-US')} × ${N.toLocaleString('en-US')}, ${((100 * (N * N - nnz)) / (N * N)).toFixed(1)}% zeros`, { size: 0.17, color: C.ash, anchorX: 'center', anchorY: 'top', position: [M.cx, MT - M.s - 0.12, 0] }));
+  // The chosen row: a band across the matrix, and its entries as dots.
+  const band = polyline([[0, 0, 0], [0, 0, 0]], { color: C.rust, width: 2 });
+  stage.add(band);
+  const dots = new THREE.Group();
+  stage.add(dots);
+  // In the room: the row's piece and direction, and the lines back to where its light comes from.
+  const lines = new THREE.Group();
+  room.add(lines);
+  const caption = label('', { size: 0.2, color: C.bone, anchorX: 'center', anchorY: 'top', position: [ROOM_AT.x, ROOM_AT.y - ROOM_HALF.y * SCALE - 0.2, 0] });
+  const caption2 = label('', { size: 0.16, color: C.ash, anchorX: 'center', anchorY: 'top', position: [ROOM_AT.x, ROOM_AT.y - ROOM_HALF.y * SCALE - 0.52, 0] });
+  stage.add(caption, caption2);
+  const mid = (i: number) => add(pieces[i]!.a, sub(pieces[i]!.b, pieces[i]!.a), 0.5);
+  const near = (name: string, at: Vec, mirrorFront = true) => {
+    let best = -1;
+    let bd = Infinity;
+    pieces.forEach((p, i) => {
+      if (p.name !== name) return;
+      if (p.kind === 'mirror' && (i % 2 === 0) !== mirrorFront) return;
+      const d = Math.hypot(mid(i).x - at.x, mid(i).y - at.y);
+      if (d < bd) {
+        bd = d;
+        best = i;
+      }
+    });
+    return best;
+  };
+  const EXAMPLES = [
+    { piece: near('white wall', v(-1.5, -2.8)), k: 5, what: 'the floor', how: 'matte: light from everything it can see' },
+    { piece: near('flat mirror', v(1.3, -0.85), true), k: 3, what: 'the flat mirror', how: 'a mirror: light from one direction' },
+    { piece: near('green wall', v(5.2, 0.4)), k: 7, what: 'the green wall', how: 'matte: light from everything it can see' },
+  ];
+  function showRow(ex: (typeof EXAMPLES)[number]): void {
+    const p = ex.piece;
+    const row = index(p, ex.k);
+    for (const g of [lines, dots]) while (g.children.length) g.remove(g.children[0]!);
+    // The matrix: the band and the entries.
+    const y = MT - ((row + 0.5) / N) * M.s;
+    setPolyline(band, [[ML - 0.12, y, 0.02], [ML + M.s + 0.12, y, 0.02]]);
+    const cs = T.cols[row]!;
+    const vs = T.vals[row]!;
+    const vmax = Math.max(...vs, 1e-12);
+    cs.forEach((c, e) => {
+      const d = new THREE.Mesh(new THREE.CircleGeometry(0.035 + 0.035 * Math.sqrt(vs[e]! / vmax), 16), flat(C.ochre));
+      d.position.set(ML + ((c + 0.5) / N) * M.s, y, 0.03);
+      dots.add(d);
+    });
+    // The room: where each entry's light comes from, a line back to that piece.
+    const m0 = mid(p);
+    const from = new Set<number>();
+    cs.forEach((c, e) => {
+      const j = Math.floor(c / HALF);
+      from.add(j);
+      const op = 0.25 + 0.75 * Math.sqrt(vs[e]! / vmax);
+      lines.add(polyline([P3(m0, 0.02), P3(mid(j), 0.02)], { color: C.ochre, width: 1.5, opacity: Math.min(1, op) }));
+    });
+    for (const j of from) lines.add(polyline([P3(pieces[j]!.a, 0.03), P3(pieces[j]!.b, 0.03)], { color: C.ochre, width: 6 }));
+    // The row's own piece, and the direction leaving it (its sector, as a wedge).
+    lines.add(polyline([P3(pieces[p]!.a, 0.05), P3(pieces[p]!.b, 0.05)], { color: C.rust, width: 9 }));
+    const n = pieces[p]!.n;
+    const base = Math.atan2(n.y, n.x) - Math.PI / 2;
+    const a0 = base + (Math.PI * ex.k) / HALF;
+    const a1 = a0 + Math.PI / HALF;
+    const R = 1.6;
+    const pos = [m0.x, m0.y, 0.04];
+    for (let s2 = 0; s2 <= 6; s2++) {
+      const a = a0 + ((a1 - a0) * s2) / 6;
+      pos.push(m0.x + R * Math.cos(a), m0.y + R * Math.sin(a), 0.04);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setIndex(Array.from({ length: 6 }, (_, s2) => [0, s2 + 1, s2 + 2]).flat());
+    lines.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: C.rust, transparent: true, opacity: 0.75 })));
+    setText(caption, `one row: a piece of ${ex.what}, one direction leaving it`);
+    setText(caption2, `${ex.how}: ${cs.length} of ${N.toLocaleString('en-US')} entries nonzero`);
+  }
+  const HOLD = 5; // seconds per example
+  stage.duration = HOLD * EXAMPLES.length;
+  let shown = -1;
+  stage.frame((t) => {
+    const k = Math.floor(t / HOLD) % EXAMPLES.length;
+    if (k !== shown) {
+      shown = k;
+      showRow(EXAMPLES[k]!);
     }
   });
 }
