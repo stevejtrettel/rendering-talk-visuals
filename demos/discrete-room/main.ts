@@ -853,7 +853,8 @@ if (SHOW === 'camera' || SHOW === 'cmatrix') {
       acrossLine.visible = groups[2]!.visible;
       info.position.set(G.x0 + 0.05, y + 0.04, 0.3);
       const val = pixel(j)[c]!;
-      setText(info, `pixel ${j + 1} (${'RGB'[c]}): ${camRows[j]!.length} nonzero entries (its ${LENS_K} rays through the lens); their sum against L: ${val < 0.001 ? val.toExponential(1) : val.toFixed(4)}`);
+      const n = camRows[j]!.length;
+      setText(info, `pixel ${j + 1} (${'RGB'[c]}): ${n} nonzero ${n === 1 ? 'entry' : 'entries'} (its ${LENS_K} rays through the lens); against L: ${val < 0.001 ? val.toExponential(1) : val.toFixed(4)}`);
     });
   } else {
     // The magnifier: 5 rows by 7 columns of C's entries, centred on the nonzero nearest the pointer in its row.
