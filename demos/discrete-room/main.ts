@@ -48,10 +48,13 @@
  *           view glides down to the camera's pinhole and turns along its aim
  *           while the walls and mirrors rise into slabs, each coloured by the
  *           light leaving it toward the pinhole; at eye level the floor fades
- *           and the walls squash onto the horizon, leaving a thin coloured line
- *           (Steve: "we wouldn't see the floor in the end, and would just see
- *           the line of pixels essentially"), and the pinhole camera's 16
- *           pixels grow out of it, each on its own stretch. Along the bottom the
+ *           and the walls reshape about the horizon, each as tall as it is far
+ *           ahead of the camera, so every column is the same height on screen:
+ *           an even band, the 1D image at full resolution (Steve: we wouldn't
+ *           see the floor in the end, and "do we need to go all the way down to
+ *           a single pixel? we could have kept a thicker view, because the
+ *           wall is the same colour up and down"); then the 16 pixels grow on
+ *           it, each over its own stretch, as tall as the band. Along the bottom the
  *           whole time, the image of slide 58 (Steve: "the original pixel image
  *           running across the bottom of the screen the whole time"): the lens
  *           camera's, as are the pixels that grow (so they match it; a lens
@@ -805,12 +808,19 @@ if (SHOW === 'view') {
   const STRIPS = 12; // per piece, each coloured by the light leaving it toward the pinhole
   const slabs = new THREE.Group();
   stage.add(slabs);
+  // Each slab keeps its ends' depth ahead of the camera (along its aim), for the band at the end.
+  const FWD = v(Math.cos(AIM), Math.sin(AIM));
+  const depthOf = (q: Vec) => (q.x - PIN.x) * FWD.x + (q.y - PIN.y) * FWD.y;
+  const walls: { pos: THREE.BufferAttribute; dA: number; dB: number; mat: THREE.MeshBasicMaterial }[] = [];
   const quad = (a: Vec, b: Vec, colour: THREE.Color, off: Vec) => {
     const g = new THREE.BufferGeometry();
     const p = [a.x + off.x, a.y + off.y, 0, b.x + off.x, b.y + off.y, 0, b.x + off.x, b.y + off.y, 1, a.x + off.x, a.y + off.y, 1];
-    g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
+    const pos = new THREE.Float32BufferAttribute(p, 3);
+    g.setAttribute('position', pos);
     g.setIndex([0, 1, 2, 0, 2, 3]);
-    return new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: colour, side: THREE.DoubleSide }));
+    const mat = new THREE.MeshBasicMaterial({ color: colour, side: THREE.DoubleSide, transparent: true });
+    walls.push({ pos, dA: depthOf(a), dB: depthOf(b), mat });
+    return new THREE.Mesh(g, mat);
   };
   pieces.forEach((pc, pp) => {
     for (let k = 0; k < STRIPS; k++) {
@@ -892,7 +902,7 @@ if (SHOW === 'view') {
   const HOLD3D = 1.5; // at eye level, the 3D room, before it flattens (Steve: "the 3D-ness is actually kinda cool")
   const T2 = T1 + HOLD3D + 2.2; // the floor gone, the walls squashed onto the horizon: a line
   const T3 = T2 + 2.2; // the pixels grown out of it
-  const THIN = 0.012; // the line's half-height, in world units
+  const BAND = 0.43 * tileW; // the band's half-height on screen (as a slope: half-height / depth), the pixels' half-height
   stage.loop = false;
   stage.duration = T3 + 2.5;
   stage.captureEnd = T3 + 2.5;
@@ -908,13 +918,24 @@ if (SHOW === 'view') {
     // Keep the HUD the same on screen while the field of view changes: scale it with tan(half the view across).
     const k = Math.tan(Math.atan(Math.tan(((cam.fov * Math.PI) / 180) / 2) * (16 / 9)));
     hud.scale.set(k, k, 1);
-    // The walls rise from the floor to H; then, at eye level, squash onto the horizon.
-    const rise = H * ease((t - T0) / ((T1 - T0) * 0.6));
+    // The walls rise from the floor to H; then, at eye level, reshape about the horizon, each end as tall as
+    // it is deep (BAND x depth either side of the eye), so every column is the same height on screen.
+    const rise = Math.max(0.002, H * ease((t - T0) / ((T1 - T0) * 0.6)));
     const sq = ease((t - T1 - HOLD3D) / (T2 - T1 - HOLD3D));
-    const z0 = (EYE - THIN) * sq;
-    const z1 = rise + (EYE + THIN - rise) * sq;
-    slabs.position.z = z0;
-    slabs.scale.z = Math.max(0.002, z1 - z0);
+    for (const w of walls) {
+      const hA = BAND * Math.max(0, w.dA);
+      const hB = BAND * Math.max(0, w.dB);
+      w.pos.setZ(0, (EYE - hA) * sq);
+      w.pos.setZ(1, (EYE - hB) * sq);
+      w.pos.setZ(2, rise + (EYE + hB - rise) * sq);
+      w.pos.setZ(3, rise + (EYE + hA - rise) * sq);
+      w.pos.needsUpdate = true;
+    }
+    tops.scale.z = rise;
+    tops.visible = sq === 0;
+    // As the pixels grow, the band dims behind them, so the gaps between them read as gaps.
+    const dim = 1 - 0.7 * ease((t - T2) / (T3 - T2));
+    for (const w of walls) w.mat.opacity = dim;
     camGroup.visible = u < 0.95;
     (floor.material as THREE.MeshBasicMaterial).opacity = 1 - ease((t - T1 - HOLD3D) / ((T2 - T1 - HOLD3D) * 0.7));
     floor.visible = (floor.material as THREE.MeshBasicMaterial).opacity > 0;
