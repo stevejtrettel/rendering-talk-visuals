@@ -48,7 +48,11 @@
  *           a smallish aperture"): LENS_K rays per pixel through a lens
  *           APERTURE wide, meeting at FOCUS; each row's entries are 1/LENS_K
  *           at the light each ray reads (summed where two rays read the same).
- *   camera  the photograph, C L (Steve, 2026-11-04: "we start with E, then we get
+ *   camera  (laid out as a textbook product, Steve: "L is a column vector right
+ *           next to it, then we do equals to our shorter column vector, the
+ *           image": C short and wide, L a tall column beside it, =, the short
+ *           column C L, and the image)
+ *           the photograph, C L (Steve, 2026-11-04: "we start with E, then we get
  *           L, then we compute C(L), our photograph"): L across the top as a
  *           row, its 4,248 entries; under it, lined up column for column, C,
  *           one row per pixel and colour (CAM_PIX pixels x 3), each row a
@@ -719,11 +723,12 @@ if (SHOW === 'camera' || SHOW === 'cmatrix') {
   };
 
   // --- Layout --------------------------------------------------------------------------
-  const G = CMAT ? { x0: -4.9, x1: 4.9 } : { x0: -4.7, x1: 2.45 }; // the columns of C, and L above them
-  const LROW = { y: 2.05, h: 0.3 };
-  const CM = CMAT ? { y1: 1.75, y0: -1.75 } : { y1: 1.62, y0: -0.95 }; // C's rows, top to bottom
-  const PCOL = { x: 3.05, w: 0.3 };
-  const STRIP = { x: 4.45, w: 0.6 };
+  const G = CMAT ? { x0: -4.9, x1: 4.9 } : { x0: -5.0, x1: 0.75 }; // C's columns
+  const CM = CMAT ? { y1: 1.75, y0: -1.75 } : { y1: 0.8, y0: -0.8 }; // C's rows, top to bottom
+  const LCOL = { x: 1.3, w: 0.3, y1: 2.45, y0: -2.45 }; // L, a tall column beside C
+  const PCOL = { x: 2.55, w: 0.3 }; // C L, as tall as C
+  const STRIP = { x: 3.85, w: 0.6 };
+  const yOfL = (i: number) => LCOL.y1 - ((i + 0.5) / NN) * (LCOL.y1 - LCOL.y0);
   const xOfCol = (i: number) => G.x0 + ((i + 0.5) / NN) * (G.x1 - G.x0);
   const yOfRow = (r: number) => CM.y1 - ((r + 0.5) / ROWS) * (CM.y1 - CM.y0);
   const groups = [new THREE.Group(), new THREE.Group(), new THREE.Group(), new THREE.Group()];
@@ -742,7 +747,7 @@ if (SHOW === 'camera' || SHOW === 'cmatrix') {
     data[o + 2] = hex & 255;
     data[o + 3] = 255;
   };
-  // L, as a row (left to right: the R block, G, B).
+  // L, as a column (top to bottom: the R block, G, B).
   {
     const lv: number[] = [];
     for (const f of L) for (const x of f) if (x > 0) lv.push(x);
@@ -759,12 +764,12 @@ if (SHOW === 'camera' || SHOW === 'cmatrix') {
         c = Math.floor(i / N);
         acc += L[c]![i - c * N]! / (i1 - i0);
       }
-      put(data, r * 4, hexOfTint(c, 1.15 * (1 - Math.exp(-acc / qL))));
+      put(data, (PX - 1 - r) * 4, hexOfTint(c, 1.15 * (1 - Math.exp(-acc / qL))));
     }
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(G.x1 - G.x0, LROW.h), new THREE.MeshBasicMaterial({ map: tex(data, PX, 1) }));
-    m.position.set((G.x0 + G.x1) / 2, LROW.y, 0);
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(LCOL.w, LCOL.y1 - LCOL.y0), new THREE.MeshBasicMaterial({ map: tex(data, 1, PX) }));
+    m.position.set(LCOL.x, (LCOL.y0 + LCOL.y1) / 2, 0);
     groups[0]!.add(m);
-    frame(groups[0]!, G.x0, LROW.y - LROW.h / 2, G.x1, LROW.y + LROW.h / 2);
+    frame(groups[0]!, LCOL.x - LCOL.w / 2, LCOL.y0, LCOL.x + LCOL.w / 2, LCOL.y1);
   }
   // C: a dot per row, at the column its pixel reads.
   {
@@ -779,7 +784,7 @@ if (SHOW === 'camera' || SHOW === 'cmatrix') {
   }
   // = the column of pixel values.
   {
-    groups[2]!.add(label('=', { size: 0.4, color: C.bone, anchorX: 'center', anchorY: 'middle', position: [(G.x1 + PCOL.x - PCOL.w / 2) / 2, (CM.y0 + CM.y1) / 2, 0] }));
+    groups[2]!.add(label('=', { size: 0.4, color: C.bone, anchorX: 'center', anchorY: 'middle', position: [(LCOL.x + LCOL.w / 2 + PCOL.x - PCOL.w / 2) / 2, (CM.y0 + CM.y1) / 2, 0] }));
     const data = new Uint8Array(ROWS * 4);
     for (let c = 0; c < 3; c++)
       for (let j = 0; j < CAM_PIX; j++) {
@@ -842,16 +847,20 @@ if (SHOW === 'camera' || SHOW === 'cmatrix') {
       const y = yOfRow(r);
       setPolyline(rowBand, [[G.x0, y, 0.03], [G.x1, y, 0.03]]);
       while (ups.children.length) ups.remove(ups.children[0]!);
-      let xMax = G.x0;
       for (const [col] of camRows[j]!) {
         const x = xOfCol(c * N + col);
-        xMax = Math.max(xMax, x);
-        ups.add(polyline([[x, y, 0.03], [x, LROW.y - LROW.h / 2, 0.03]], { color: C.bone, width: 1.2 }));
+        const yl = yOfL(c * N + col);
+        // The entry of C, to the entry of L it multiplies, to the pixel the products add into.
+        ups.add(polyline([[x, y, 0.03], [LCOL.x - LCOL.w / 2, yl, 0.03]], { color: C.bone, width: 1.2 }));
+        ups.add(polyline([[LCOL.x + LCOL.w / 2, yl, 0.03], [PCOL.x - PCOL.w / 2, y, 0.03]], { color: C.bone, width: 1.2, opacity: 0.7 }));
+        const mk = new THREE.Mesh(new THREE.PlaneGeometry(LCOL.w + 0.08, 0.035), flat(C.bone));
+        mk.position.set(LCOL.x, yl, 0.04);
+        ups.add(mk);
       }
-      setPolyline(acrossLine, [[xMax, y, 0.03], [PCOL.x - PCOL.w / 2, y, 0.03]]);
+      setPolyline(acrossLine, [[G.x0, y, 0.03], [G.x0, y, 0.03]]);
       rowBand.visible = ups.visible = info.visible = true;
       acrossLine.visible = groups[2]!.visible;
-      info.position.set(G.x0 + 0.05, y + 0.04, 0.3);
+      info.position.set(G.x0 + 0.05, CM.y1 + 0.12, 0.3);
       const val = pixel(j)[c]!;
       const n = camRows[j]!.length;
       setText(info, `pixel ${j + 1} (${'RGB'[c]}): ${n} nonzero ${n === 1 ? 'entry' : 'entries'} (its ${LENS_K} rays through the lens); against L: ${val < 0.001 ? val.toExponential(1) : val.toFixed(4)}`);
