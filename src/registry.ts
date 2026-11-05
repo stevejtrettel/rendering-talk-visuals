@@ -327,6 +327,11 @@ export const INFO: Record<string, DemoInfo> = {
     blurb: 'A spectrum from the beam room, arrows to the three cone response curves (long, medium, short), and from each curve to its bar: the spectrum integrated against that curve. Flat white light gives three equal bars.',
     section: 'Modeling Light',
   },
+  'discrete-room': {
+    title: 'Inverting Id - T',
+    blurb: 'The beam room discretized: its boundary in pieces, each with a circle of direction sectors (?show=pieces); T as a matrix, numbers running past, mostly zeros (?show=matrix); and a single bright source E with (Id - T)^{-1} E beside it, solved by Gaussian elimination on the 1368 x 1368 matrix, once per colour (?show=solve).',
+    section: 'Computing a Photograph',
+  },
   'thin-lens-camera': {
     title: 'A Thin-Lens Camera',
     blurb: 'The pinhole camera with a lens: each pixel averages the light field over a fan of rays, one through every point of the lens, all meeting at the pixel\'s point on the focus plane. Sharp where the focus plane meets a surface, blurred elsewhere; aperture 0 is the pinhole. &rgb draws each ray in the colour of its light, without the spectrum graph.',
